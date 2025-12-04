@@ -11,7 +11,7 @@ import Calculation
 
 ### Initialization ###
 
-simulation_time = 15# Total simulation time
+simulation_time = 5# Total simulation time
 
 # Runtime calculation
 beginning_date_and_time = dtm.datetime.now()
@@ -194,14 +194,14 @@ def find_interpolation_points (Xp, Yp, stuck, number_points_interpolation, inter
             X_stuck.append(Xp[index]), Y_stuck.append(Yp[index])
 
     # List of points used for interpolation
-    X_coordinate_interpolation, Y_coordinate_interpolation = [], []
+    X_coordinate_interpolation, Y_coordinate_interpolation = np.zeros(number_points_interpolation), np.zeros(number_points_interpolation)
 
     # Scroll through each interval to find the interpolation point (ie the lowest one)
-    for point in range(1, number_points_interpolation + 1):
+    for point in range(0, number_points_interpolation ):
 
         # Boundary of the current interval
-        dmin = (point-1)*interval_interpolation_size
-        dmax = point*interval_interpolation_size
+        dmin = (point)*interval_interpolation_size
+        dmax = (point + 1) * interval_interpolation_size
         
         # List of all the stuck parti in the current interval
         X_in_interval, Y_in_interval = [], []
@@ -221,8 +221,8 @@ def find_interpolation_points (Xp, Yp, stuck, number_points_interpolation, inter
                 y_min = Y_in_interval[nb]
 
         # The interpolation point for the current interval is the one with the lowest Y coordinate
-        X_coordinate_interpolation.append(x_min)
-        Y_coordinate_interpolation.append(y_min)
+        X_coordinate_interpolation[point] = (x_min)
+        Y_coordinate_interpolation[point] = (y_min)
     
     return X_coordinate_interpolation, Y_coordinate_interpolation
 
@@ -374,7 +374,7 @@ for index in range(len(X_final)):
 
 if SAVE_POSITION:
 
-    file_to_write = open("CODE_SOURCE/CSV/film_position_particle_P="+str(int(stick_probability*100)/100)+"_D="+str(diffusion_coefficient)+".csv", 'w')
+    file_to_write = open("CNRS-EM2C-MODELE-FILM-NANO-PARTICULE/CODE_SOURCE/CSV/film_position_particle_P="+str(int(stick_probability*100)/100)+"_D="+str(diffusion_coefficient)+".csv", 'w')
     writer = csv.writer(file_to_write, delimiter = ",")
 
     for index in range(len(X_saved)):
@@ -419,6 +419,7 @@ def update(frame):
     return scat1,
 
 # Create the animation
+
 ani = FuncAnimation(fig1, update, frames=int(simulation_time/Tout), interval = 10)
 
 if SAVE_ANIMATION:
