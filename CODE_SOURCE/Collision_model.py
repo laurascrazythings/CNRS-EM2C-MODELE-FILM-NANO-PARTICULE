@@ -11,7 +11,7 @@ import Calculation
 
 ### Initialization ###
 
-simulation_time = 15 # Total simulation time
+simulation_time = 15# Total simulation time
 
 # Runtime calculation
 beginning_date_and_time = dtm.datetime.now()
@@ -97,7 +97,7 @@ if PRINT_KINETIC_ENERGY:
         kinetic_energy += np.sqrt(Up[index]**2 + Vp[index]**2)
 
     print(f"Énergie cinétique totale = {kinetic_energy:.2f} J")
-    print("---------------------")
+    #print("---------------------")
 
 ### Functions ###
 
@@ -119,7 +119,7 @@ def detect_collisions(Xp, Yp, d):
     return np.array(list(pairs))
 
 
-@jit
+@jit(nopython=True)
 def handle_collisions(coll_pairs, Xp, Yp, Up, Vp, stuck):
 
     """ Update the velocities of particles after a collision
@@ -181,7 +181,7 @@ def handle_collisions(coll_pairs, Xp, Yp, Up, Vp, stuck):
                     Vp[i] += wijk * kij[1] # The other particle is free to move
 
 
-@jit
+@jit(nopython=True)
 def find_interpolation_points (Xp, Yp, stuck, number_points_interpolation, interval_interpolation_size): 
 
     """ Determine all the needed points for interpolation (used to calculate the film thicnkess later)"""
@@ -234,7 +234,7 @@ time_list = [0]
 
 while time <= simulation_time:
 
-    print(f"Time = {time:.2f} s")
+   # print(f"Time = {time:.2f} s")
 
     # Add particle in the bottom of the domain
 
@@ -327,7 +327,7 @@ while time <= simulation_time:
         print(f"Énergie cinétique totale = {kinetic_energy:.2f} J")
     #Update time 
     time += dt  # Advance simulation time
-    print("---------------------")
+    #print("---------------------")
 
 
 ### Other calculation ###
@@ -374,13 +374,13 @@ for index in range(len(X_final)):
 
 if SAVE_POSITION:
 
-    file_to_write = open("film_position_particle_P="+str(int(stick_probability*100)/100)+"_D="+str(diffusion_coefficient)+".csv", 'w')
+    file_to_write = open("CODE_SOURCE/CSV/film_position_particle_P="+str(int(stick_probability*100)/100)+"_D="+str(diffusion_coefficient)+".csv", 'w')
     writer = csv.writer(file_to_write, delimiter = ",")
 
     for index in range(len(X_saved)):
         writer.writerow([str(X_saved[index]), str(Y_saved[index])])
 
-    file_to_write.close()
+    file_to_write.close()   
     print("Positions sauvegardées")
 
 ## Animation ##
