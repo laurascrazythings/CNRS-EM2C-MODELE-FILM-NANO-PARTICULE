@@ -15,7 +15,7 @@ radius_diameter = 10**(-2) #Radius of a particule (µm)
 
 #init position and velocity
 XY_start = np.array([0.2, L[1]/2])
-Vp = np.array([0.7, 0])# in (µm/s)
+Vp = np.array([1, 0])# in (µm/s)
 
 Vp_dt = Vp * dt
 
@@ -49,6 +49,6 @@ def update(frame):
     return scat,
 
 # --- Create animation ---
-ani = FuncAnimation(fig, update, frames=Nt,interval=10,blit=True)
+ani = FuncAnimation(fig, update, frames=int(Nt/10),interval=10,blit=True)
 
 plt.show()
