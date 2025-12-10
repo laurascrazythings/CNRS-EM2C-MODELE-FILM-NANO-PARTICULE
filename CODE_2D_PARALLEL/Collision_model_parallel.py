@@ -5,6 +5,8 @@ import numpy as np
 comm = MPI.COMM_WORLD #INIT the mpi
 rank = comm.Get_rank() #get the processor rank
 size = comm.Get_size() #get the total num of processors
+left = rank - 1 if rank > 0 else MPI.PROC_NULL
+right = rank + 1 if rank < size - 1 else MPI.PROC_NULL
 
 #time - TO SET
 T = 10 # seconds to change
@@ -22,7 +24,6 @@ XY_start[1,:] = [4, 10]
 Vp = np.zeros((2,2))
 Vp[0, :] = [0.5, 0] # Velocity of the particule 1
 Vp[1, :] = [0, 0]
-print(XY_start[1,0])
 
 #Local MESH - DO NOT TOUCH
 Local_width = np.array([L_total[0]/ size , L_total[1]]) # Width of 1 area and height
@@ -63,7 +64,6 @@ Ghost_num_particules_b = 0
 #Particule movment - to move once we have different particules in different zones (move in the for loop)
 
 # Particule position - to change - set to empty for now- pay attention in case some particules have a 00 position and 00 velocity might not work
-# XY_local = np.empty( 2, Num_Particules)
 XY_local = np.empty((2,Num_Particules))
 XY_ghost_a = np.empty((2,Num_Particules))
 XY_ghost_b = np.empty((2,Num_Particules))
@@ -72,29 +72,36 @@ Vp_local = np.empty((2,Num_Particules))
 Vp_ghost_a = np.empty((2,Num_Particules))
 Vp_ghost_b = np.empty((2,Num_Particules))
 
+#setting the particule index key
+Index_par_local = []
+Index_par_ghost_a = []
+Index_par_ghost_b = []
  
-#Initialisation of particules placement
+#Initialisation of particules placement, keeping track of which particule is where (kind of like a master key)
 for p in range(Num_Particules): 
     print(p)
     if Local_start <= XY_start[p, 0] < Local_end : #for now the processor has a particule if it is in
         Local_num_particules = Local_num_particules + 1 # append by the particule in the zone
+        Index_par_local.append(p) #know whch particule I have, helps not printing the same particle twice
         XY_local[p, :]= XY_start[p, :]
         Vp_local[p, :]= Vp[p, :] * dt #movment during one dt ( = distance in one dt)
     elif Local_ghost_start <= XY_start[p, 0] < Local_start:
         Ghost_num_particules_a = Ghost_num_particules_a + 1
+        Index_par_ghost_a.append(p)
         XY_ghost_a[p, :] = XY_start[p, :]
         Vp_ghost_a[p, :] = Vp[p, :] * dt #movment during one dt ( = distance in one dt)
     elif Local_end < XY_start[p, 0] <= Local_ghost_end:
         Ghost_num_particules_b = Ghost_num_particules_b + 1
+        Index_par_ghost_b.append(p)
         XY_ghost_b[p, :] = XY_start[p, :]
         Vp_ghost_b[p, :] = Vp[p, :] * dt #movment during one dt ( = distance in one dt)
 
 #works for 2 particules for now up to here
 
 #Updating the local and ghost locations
-XY_local_update = XY_local
-XY_ghost_a_update = XY_ghost_a
-XY_ghost_b_update = XY_ghost_a
+XY_local_update = XY_local.copy()
+XY_ghost_a_update = XY_ghost_a.copy()
+XY_ghost_b_update = XY_ghost_b.copy()
 
 #Boolean value that will keep track of if i have already sent a particule to another proc so 
 # that it doesnt resend it, will be reset to false when the particule leaves the proc t enable rollback
@@ -102,36 +109,82 @@ Local_sent_next = np.zeros((Num_Particules,1), dtype=bool)
 
 for t in range(Nt):
     
-    data = comm.recv(source = rank - 1) #deal with other cases later aligator
-    #If i receive data :
-        #if data [3] = "ghost a"
-            #Ghost_num_particules_a += 1
-            #XY_ghost_a[]
-        #else if data[3] = "ghost b"
-            #Ghost_num_particules_a += 1
-            #XY_ghost_b =
-        #else
-            #break :error
     #case where the particule is inside the local area ot the ghost    
-    if Local_num_particules > 0 or Ghost_num_particules_a > 0 or Ghost_num_particules_b:
+    Particle_info_right = [] #list of particles to send to r + 1 
+    Particle_info_left = [] #list of particles to send to r - 1
+    if Local_num_particules > 0 or Ghost_num_particules_a > 0 or Ghost_num_particules_b > 0 :
         #there is one particule inside the whole processor realm so we update their position; if no particule in the area it should return 00
-        XY_local = XY_local_update
-        XY_local_update = XY_local + Vp_local
+        XY_local = XY_local_update #initializing the old value 
+        XY_local_update = XY_local.copy + Vp_local #new value = old + distance in one frame
         XY_ghost_a = XY_ghost_a_update
         XY_ghost_a_update = XY_ghost_a + Vp_ghost_a
         XY_ghost_b = XY_ghost_b_update
         XY_ghost_b_update = XY_ghost_b + Vp_ghost_b
-        #update the local first if it is out of bounds
+        #update the local first if it is out of bounds 
         for par in range(Local_num_particules):
-            if XY_local_update[par, 0] >= (Local_start - Buffer_zone_width) and Local_sent_next == False:
+            Index = Index_par_local[par] #index in the xy, vp and other
+            if XY_local_update[Index, 0] >= (Local_start - Buffer_zone_width) and Local_sent_next[Index] == False:
                 #The particule entered the ghost zone of the next processor, roll back to plan
                 #we send it to the next proc if we havent yet
-                Particle_info = np.array([par, XY_local_update[par,:], Vp_local[par,:], "ghost_a"]) #index, position, velocity, ghost area 
-                comm.send(Particle_info, dest = (rank + 1))#for now it is only going to rank + 1
-                Local_sent_next[par, 0] = True
-            elif XY_local_update[par, 0] > Local_end:
-                Local_num_particules = Local_num_particules - 1
-                XY_local_update[par, :] = [0, 0]
+                Particle_info_right.append((Index, XY_local_update[Index,:].copy(), Vp_local[Index,:].copy(), "ghost_a")) # index, position, velocity, ghost area 
+                # comm.send(Particle_info, dest = (rank + 1)) #for now it is only going to rank + 1 - update when rollback or 2d
+                Local_sent_next[Index, 0] = True
+            elif XY_local_update[Index, 0] > Local_end:
+                #the particule left the main local proc area, enters the ghost are    
+                Ghost_num_particules_b = Ghost_num_particules_b + 1 #first I count it in the ghost area    
+                Index_par_ghost_b.append(Index)#add the index to the end of the list          
+                XY_ghost_b_update[Index,:] = XY_local_update[Index, :].copy() #associate the local position with the ghost         
+                Vp_ghost_b[Index, :] = Vp_local[Index, :].copy() #associate the local speed with the ghost 
+                XY_local_update[Index, :] = [0, 0] #set the local to 00 
+                Vp_local[Index, :] = [0, 0] # set the local back to 00
+                Local_num_particules = Local_num_particules - 1 # remove the particule from the local count
+                Index_par_local.pop(par)#remove from the particle index list
+        for par_b in range(Ghost_num_particules_b):
+            Index = Index_par_ghost_b[par_b] #index of the particule in the ghost b area to use for the xy vp which are indexed following the grand scheme to obliviate confusion
+            #2 cases for now forward or backward
+            if XY_ghost_b_update[Index, 0] > Local_ghost_end : #For now, we are only dealing with the going forward for simplicity 
+                #particule is leaving the ghost b area 
+                XY_ghost_b[Index, :] = [0, 0] #technically, I already sent it so no send
+                Vp_ghost_b[Index, :] = [0, 0]
+                if Local_sent_next[Index] == True:
+                    Local_sent_next[Index] = False #set back to False
+                else :
+                    print("The particule was never sent to another proc, it is lost. \n")
+                Ghost_num_particules_b = Ghost_num_particules_b - 1  #remove from the count
+                Index_par_ghost_b.pop(par_b) #remove the particule from the count
+        for par_a in range(Ghost_num_particules_a):
+            Index = Index_par_ghost_a[par_a] #index of the particule in the ghost a area
+            #2 cases froward or backward
+            if XY_ghost_a_update[Index, 0] > Local_start:
+                #the particule enters the local area and leaves the ghost area
+                Local_num_particules = Local_num_particules + 1 #count the particule in the local particule count
+                Index_par_local.append(Index) #add the index to the list
+                XY_local_update[Index, :] = XY_ghost_a[Index, :].copy() #update the local position of the particule
+                Vp_local[Index, :] = Vp_ghost_a[Index, :].copy() #Update the local speed of the particule
+                XY_ghost_a[Index, :] = [0, 0] #Remove the positon of the particule
+                Vp_ghost_a[Index, :] = [0, 0] #Remove the speed of the particule 
+                Ghost_num_particules_b = Ghost_num_particules_b - 1 #increment
+                Index_par_ghost_a.pop(par_a) #Index of the new particule added 
+                
+    #do the comms now, so that it send the whole list
+    incoming_from_left = comm.sendrecv( sendobj = Particle_info_right, dest = right, sendtag = 0, source = left, recvtag = 0)
+    #sending a particule to the right, the tag helps identifying hte different sends (if it is going left or right)
+    incoming_from_right = comm.sendrecv( sendobj = Particle_info_left, dest = left, sendtag = 1, source = right, recvtag = 1)
+    #sending a particule to the left, tag = 1 for right to left
+    
+    #how to deal with the new data
+    if incoming_from_left is None: #if null
+        incoming_from_left = [] #set to empty to be able to loop on it without errors
+    
+    for Index, pos, vel, ghost_place in incoming_from_left:
+        if ghost_place == "ghost a":
+            
+        
+        
+        
+                
+                
+                
             
     
     
