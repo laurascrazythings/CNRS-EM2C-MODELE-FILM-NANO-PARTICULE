@@ -49,6 +49,6 @@ def update(frame):
     return scat,
 
 # --- Create animation ---
-ani = FuncAnimation(fig, update, frames=int(Nt/10),interval=10,blit=True)
+ani = FuncAnimation(fig, update, frames= Nt * 10,interval=10,blit=True)
 
 plt.show()

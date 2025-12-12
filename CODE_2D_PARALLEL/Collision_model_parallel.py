@@ -1,12 +1,19 @@
 #I am wanting to code a mpi code that can send one particule from one proc to another
-from mpi4py import MPI
-import numpy as np
+from mpi4py import MPI #mpi
+import numpy as np #np calculation
+import matplotlib.pyplot as plt #plotting
+from matplotlib.animation import FuncAnimation, PillowWriter #animation
 
+
+#mpi init the domain of mpi - DO NOT TOUCH
 comm = MPI.COMM_WORLD #INIT the mpi
 rank = comm.Get_rank() #get the processor rank
 size = comm.Get_size() #get the total num of processors
 left = rank - 1 if rank > 0 else MPI.PROC_NULL
 right = rank + 1 if rank < size - 1 else MPI.PROC_NULL
+
+# save animation as a GIF? - To SET 
+save_gif_animation = True
 
 #time - TO SET
 T =  8# seconds to change
@@ -20,9 +27,9 @@ L_total = np.array([8, 20]) #Total Size in microm
 Num_Particules = 2 #for now the second particule doesnt move but is needed to code
 XY_start = np.zeros((2,Num_Particules)) #particule start position, rand later
 XY_start[0,:] = [0.2, 10]
-XY_start[1,:] = [4.5, 10]
+XY_start[1,:] = [4.5, 15]
 Vp = np.zeros((2,2))
-Vp[0, :] = [1, 0] # Velocity of the particule 1
+Vp[0, :] = [1, 0] # Velocity of the particule 1 - for now set, will rand later
 Vp[1, :] = [0.1, 0]
 
 #Local MESH - DO NOT TOUCH
@@ -50,7 +57,7 @@ else:
     Local_ghost_end = Local_end + Buffer_zone_width[0] #the ghost zone ends
     
     
-#checks
+#checks - print if you want - prints only once for proc
 # print("Local Start for processor ", rank, " is : ", Local_start, "\n")
 # print("Local Ghost Start for processor ", rank, " is : ", Local_ghost_start, "\n")
 # print("Local End for processor ", rank, " is : ", Local_end, "\n")
@@ -60,8 +67,6 @@ else:
 Local_num_particules = 0 #define the number of particules before they are sorted in the different processors
 Ghost_num_particules_a = 0
 Ghost_num_particules_b = 0
-
-#Particule movment - to move once we have different particules in different zones (move in the for loop)
 
 # Particule position - to change - set to empty for now- pay attention in case some particules have a 00 position and 00 velocity might not work
 XY_local = np.empty((2,Num_Particules))
@@ -77,7 +82,8 @@ Index_par_local = []
 Index_par_ghost_a = []
 Index_par_ghost_b = []
  
-#Initialisation of particules placement, keeping track of which particule is where (kind of like a master key)
+#Initialisation 
+# of particules placement, keeping track of which particule is where (kind of like a master key)
 for p in range(Num_Particules): 
     if Local_start <= XY_start[p, 0] < Local_end : #for now the processor has a particule if it is in
         Local_num_particules = Local_num_particules + 1 # append by the particule in the zone
@@ -95,9 +101,7 @@ for p in range(Num_Particules):
         XY_ghost_b[p, :] = XY_start[p, :]
         Vp_ghost_b[p, :] = Vp[p, :] * dt #movment during one dt ( = distance in one dt)
 
-#works for 2 particules for now up to here
-
-#Updating the local and ghost locations
+#Initialisation of the Update of the local and ghost locations
 XY_local_update = XY_local.copy()
 XY_ghost_a_update = XY_ghost_a.copy()
 XY_ghost_b_update = XY_ghost_b.copy()
@@ -113,12 +117,8 @@ XY_local_saved[0,:,:] = XY_local.copy()
 #Boolean value that will keep track of if i have already sent a particule to another proc so 
 # that it doesnt resend it, will be reset to false when the particule leaves the proc t enable rollback
 Local_sent_next = np.zeros((Num_Particules), dtype=bool)
-print("Local_sent_next shape =", Local_sent_next.shape)
-print("Local_sent_next dtype =", Local_sent_next.dtype)
 
-
-for t in range(1, Nt+ 1):
-    
+for t in range(1, Nt+ 1):   
     #case where the particule is inside the local area ot the ghost    
     Particle_info_right = [] #list of particles to send to r + 1 
     Particle_info_left = [] #list of particles to send to r - 1
@@ -186,7 +186,6 @@ for t in range(1, Nt+ 1):
         incoming_from_left = [] #set to empty to be able to loop on it without errors
     
     for Index, pos, vel, ghost_place in incoming_from_left: #for all the different particles
-        print(ghost_place)
         if ghost_place == 'ghost_a': #add to ghost a
             Ghost_num_particules_a = Ghost_num_particules_a + 1 #add the particle to the ghost area
             Index_par_ghost_a.append(Index) #add the particle index
@@ -219,8 +218,48 @@ else :
     comm.send(XY_local_saved, dest = 0)
 
 if rank == 0:
-    print(XY_master_saved)
+    # print(XY_master_saved)
+    # plot
+    # --- Figure and initial scatter ---
+    fig, ax = plt.subplots()
+    # Set domain to your physical box
+    ax.set_xlim(0, L_total[0])
+    ax.set_ylim(0, L_total[1])
+    ax.set_xlabel("x (µm)")
+    ax.set_ylabel("y (µm)")
     
-MPI.Finalize
+    #num particules - start with empty data
+    scat = ax.scatter( np.zeros( Num_Particules), np.zeros( Num_Particules), s=50)
+    #define the title before
+    title = ax.set_title("Particle animation")
+    
+    # --- choose video fps + how many sim steps per video frame ---
+    fps = 30
+    stride = max(1, int((1 / fps) / dt))   # sim steps per rendered frame
+    frames = range(0, Nt, stride)
+
+    #realistic aspect ratio
+    ax.set_aspect("equal", adjustable="box")
+
+    def update(frame):  #change to have n particules 
+        positions = XY_master_saved[frame, :, :] 
+        # set_offsets expects an array of shape (n_points, 2)
+        scat.set_offsets(positions)
+        current_time = frame * dt
+        ax.set_title(f"Particle animation (t = {current_time:.3f} s)")
+
+    # --- Create animation ---  #change to have n particules 
+    ani = FuncAnimation( fig, update, frames = frames, interval=1000/fps, blit = False)
+    if save_gif_animation: 
+        writer =  PillowWriter(fps=fps)
+        ani.save("particle_animation.gif", writer=writer)
+        
+    plt.close(fig)#not showing but saving
+    
+#comm.Barrier() #wait for eachother before stopping        
+MPI.Finalize # stop the parallelization
+
 #check that all particles are still there
-#Save data of the dif particles
+
+
+
