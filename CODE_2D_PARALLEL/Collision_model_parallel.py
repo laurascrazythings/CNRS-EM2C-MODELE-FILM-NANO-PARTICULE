@@ -240,6 +240,9 @@ if rank == 0:
 
     #realistic aspect ratio
     ax.set_aspect("equal", adjustable="box")
+    
+    for k in range(size-1):
+        ax.axvline(x = (k + 1) * Local_width[0], color = "red", linestyle = "--", linewidth = 1)
 
     def update(frame):  #change to have n particules 
         positions = XY_master_saved[frame, :, :] 
