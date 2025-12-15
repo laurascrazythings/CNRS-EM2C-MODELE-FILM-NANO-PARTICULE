@@ -1,4 +1,4 @@
-#I am wanting to code a mpi code that can send one particule from one proc to another
+#I am wanting to code a mpi code that can send one particule from one proc to another - 2d
 from mpi4py import MPI #mpi
 import numpy as np #np calculation
 import matplotlib.pyplot as plt #plotting
