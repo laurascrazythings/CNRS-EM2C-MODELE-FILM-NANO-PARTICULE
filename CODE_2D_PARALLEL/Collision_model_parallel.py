@@ -158,7 +158,7 @@ for t in range(1, Nt+ 1):
             elif (XY_local_update[Index, 0] <= (Local_start + Buffer_zone_width[0]) and not Local_sent_prev[Index]):
                 #The particule entered the ghost zone of the "previous" processor,
                 #we send it to the prev proc if we havent yet
-                print("position : ", XY_local_update[Index, 0], " proc: ", rank," start", Local_start, " buffer", Buffer_zone_width )
+                #print("position : ", XY_local_update[Index, 0], " proc: ", rank," start", Local_start, " buffer", Buffer_zone_width ) - check the particules sent
                 Particle_info_left.append((Index, XY_local_update[Index,:].copy(), Vp_local[Index,:].copy())) # index, position, velocity
                 Local_sent_prev[Index] = True
             elif (XY_local_update[Index, 0] > (Local_start + Buffer_zone_width[0]) and Local_sent_prev[Index]):
@@ -223,8 +223,7 @@ for t in range(1, Nt+ 1):
                 else :
                     print("The particule was never sent to another proc, it is lost. \n")
                 Index_par_ghost_a.pop(par_a) #remove the particule from the count
-                Index_par_ghost_a_set.discard(par_a)
-        print(Local_sent_prev)   
+                Index_par_ghost_a_set.discard(par_a)  
     # print("Particle info right " , Particle_info_right)
     # print("Particle info left " , Particle_info_left)
     #do the comms now, so that it send the whole list
@@ -324,8 +323,7 @@ if rank == 0:
         ani.save("particle_animation.gif", writer=writer)
         
     plt.close(fig)#not showing but saving
-    
-#comm.Barrier() #wait for eachother before stopping        
+       
 MPI.Finalize # stop the parallelization
 
 #check that all particles are still there
