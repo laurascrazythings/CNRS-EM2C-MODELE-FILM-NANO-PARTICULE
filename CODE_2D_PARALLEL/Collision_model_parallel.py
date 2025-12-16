@@ -3,36 +3,35 @@ from mpi4py import MPI #mpi
 import numpy as np #np calculation
 import matplotlib.pyplot as plt #plotting
 from matplotlib.animation import FuncAnimation, FFMpegWriter #animation
-plt.clf()
 
 #mpi init the domain of mpi - DO NOT TOUCH
 comm = MPI.COMM_WORLD #INIT the mpi
-rank = comm.Get_rank() #get the processor rank
 size = comm.Get_size() #get the total num of processors
-if rank > 0:
-    left = rank - 1 
-else: 
-    left = size - 1
-if rank < size - 1:
-    right = rank + 1
-else: 
-    right = 0
 
-# save animation as a GIF? - To SET 
-save_gif_animation = True
+#1D cart : initialize the dim using cartesian mpi built in functions - DO NOT TOUCH
+cart = comm.Create_cart(dims = [size], periods = True, reorder = True)
+rank = cart.Get_rank() #get the processor rank
+coordinates = cart.Get_coords(rank)[0]
+left, right = cart.Shift(direction = 0, disp = 1)
+
+#initialize the plot
+plt.clf() 
 
 #time - TO SET
 T =  8# seconds to change
 dt = 0.05 #delta t 
-Nt = int(T/ dt) #num of Iterations 
+Nt = int(T/ dt) #num of Iterations
+
+# save animation as a GIF? - To SET 
+save_gif_animation = True 
 
 #Mesh - TO SET
 L_total = np.array([20, 20]) #Total Size in microm
 
-#Particules - TO SET
-Num_Particules = 500 #for now the second particule doesnt move but is needed to code
+#Particles - TO SET
+Num_Particules = 50 #for now the second particule doesnt move but is needed to code
 
-
+#particules init - DO NOT TOUCH
 if rank == 1: #do not overload proc 0 , need the if so that the rand doesnt run for each proc
     XY_start = np.empty((Num_Particules,2)) #particule start position 
     XY_start[:, 0] = np.random.uniform(low = 0, high = L_total[0], size = Num_Particules) #rand the position
@@ -57,9 +56,9 @@ Local_ghost_start = np.array([0])
 Local_end = np.array([0]) # defining the end before being rewritten
 Local_ghost_end = np.array([0])
 
-Local_start = (rank * Local_width[0]) # the principal zone starts
+Local_start = (coordinates * Local_width[0]) # the principal zone starts
 Local_ghost_start = Local_start - Buffer_zone_width[0] #the ghost zone starts before
-Local_end = (rank + 1 ) * Local_width[0] #the prinicpal zone ends
+Local_end = (coordinates + 1 ) * Local_width[0] #the prinicpal zone ends
 Local_ghost_end = Local_end + Buffer_zone_width[0] #the ghost zone ends
     
     
@@ -286,6 +285,7 @@ if rank == 0: #the proc 0 will receive all of the other locally saved positoins 
            
 else :
     comm.send(XY_local_saved, dest = 0)
+
 
 
 #printing and ploting
