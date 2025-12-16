@@ -31,19 +31,25 @@ L_total = np.array([20, 20]) #Total Size in microm
 
 #Particules - TO SET
 Num_Particules = 500 #for now the second particule doesnt move but is needed to code
-XY_start = np.empty((Num_Particules,2)) #particule start position 
-
-XY_start[:, 0] = np.random.uniform(low = 0, high = L_total[0], size = Num_Particules) #rand the position
-XY_start[:, 1] = np.random.uniform(low = 0, high = L_total[1], size = Num_Particules)
 
 
-Vp = np.zeros((Num_Particules,2))
-Vp[:, 0] = np.random.uniform(low = -1.3, high = 1.3, size = Num_Particules)
+if rank == 1: #do not overload proc 0 , need the if so that the rand doesnt run for each proc
+    XY_start = np.empty((Num_Particules,2)) #particule start position 
+    XY_start[:, 0] = np.random.uniform(low = 0, high = L_total[0], size = Num_Particules) #rand the position
+    XY_start[:, 1] = np.random.uniform(low = 0, high = L_total[1], size = Num_Particules)
+    #velocity rand
+    Vp = np.zeros((Num_Particules,2))
+    Vp[:, 0] = np.random.uniform(low = -1.3, high = 1.3, size = Num_Particules)
+else: 
+    XY_start = None
+    Vp = None
 
+XY_start = comm.bcast(XY_start, root = 1)
+Vp = comm.bcast(Vp, root = 1)
 
 #Local MESH - DO NOT TOUCH
 Local_width = np.array([L_total[0]/ size , L_total[1]]) # Width of 1 area and height
-Buffer_zone_width = np.array([abs(Vp[0,0]) * dt * 2 , L_total[1]]) #Buffer depend on the velocity of the particule, for now in 1 D - to change for 2D
+Buffer_zone_width = np.array([np.max(np.abs(Vp[:,0])) * dt * 2, L_total[1]]) #Buffer depend on the velocity of the particule, for now in 1 D - to change for 2D
 
 #Each Proc - DO NOT TOUCH
 Local_start = np.array([0]) # defining the start before being rewritten
@@ -275,7 +281,7 @@ if rank == 0: #the proc 0 will receive all of the other locally saved positoins 
                     if np.allclose(XY_master_saved[t, i, :], 0.0) : #if the master value is set to 00 for now 
                         XY_master_saved[t, i, :] = XY_source_saved[t, i, :].copy() #replace the value in the master for the source value,
                     elif not np.allclose(XY_master_saved[t, i, :], XY_source_saved[t, i, :]): # check if 2 dif value dif than 00 exist for 2 dif proc
-                        print("The position ",XY_source_saved[t, i, :] , " for particule ", i, " in proc: ", source, " is different than in the master at t = ", t, "\n", " which is : ", XY_master_saved[:,i,t])
+                        print("The position ",XY_source_saved[t, i, :] , " for particule ", i, " in proc: ", source, " is different than in the master at t = ", t, "\n", " which is : ", XY_master_saved[t, i, :])
                                    
            
 else :
