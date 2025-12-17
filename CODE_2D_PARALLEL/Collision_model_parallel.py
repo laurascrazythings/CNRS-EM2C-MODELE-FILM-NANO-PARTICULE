@@ -128,12 +128,12 @@ for p in range(Num_Particules):
         Index_par_ghost_right_set.add(p)
         XY_ghost_right[p, :] = XY_start[p, :]
         Vp_ghost_right[p, :] = Vp[p, :] * dt #movment during one dt ( = distance in one dt)
-    elif Local_ghost_left <= XY_start[p, 0] < Local_ghost_right and Local_up <= XY_start[p, 1] <= Local_ghost_up: #up ghost (with corners)
+    elif Local_ghost_left <= XY_start[p, 0] <= Local_ghost_right and Local_up <= XY_start[p, 1] <= Local_ghost_up: #up ghost (with corners)
         Index_par_ghost_up.append(p)
         Index_par_ghost_up_set.add(p)
         XY_ghost_up[p, :] = XY_start[p, :]
         Vp_ghost_up[p, :] = Vp[p, :] * dt #movment during one dt ( = distance in one dt)
-    elif Local_ghost_left <= XY_start[p, 0] < Local_ghost_right and Local_ghost_down <= XY_start[p, 1] <= Local_down: #down ghost (with corners)
+    elif Local_ghost_left <= XY_start[p, 0] <= Local_ghost_right and Local_ghost_down <= XY_start[p, 1] < Local_down: #down ghost (with corners)
         Index_par_ghost_down.append(p)
         Index_par_ghost_down_set.add(p)
         XY_ghost_down[p, :] = XY_start[p, :]
@@ -145,6 +145,8 @@ for p in range(Num_Particules):
 XY_local_update = XY_local.copy()
 XY_ghost_left_update = XY_ghost_left.copy()
 XY_ghost_right_update = XY_ghost_right.copy()
+XY_ghost_up_update = XY_ghost_up.copy()
+XY_ghost_down_update = XY_ghost_down.copy()
 
 
 #initiate the saving of information
@@ -154,15 +156,16 @@ XY_local_saved = np.zeros((Nt, Num_Particules, 2)) #saving the positions of ever
 XY_local_saved[0,:,:] = XY_local.copy()
 
 
-#Boolean value that will keep track of if i have already sent a particule to another proc so 
+# Boolean value that will keep track of if i have already sent a particule to another proc so 
 # that it doesnt resend it, will be reset to false when the particule leaves the proc t enable rollback
-Local_sent_next = np.zeros((Num_Particules), dtype = bool)
-Local_sent_prev = np.zeros((Num_Particules), dtype = bool)
+Local_sent = np.zeros((Num_Particules,4), dtype = bool) #[:,0] : right; [:,1]: left; [:,2]: up; [:,3]: down
 
-for t in range(1, Nt+ 1):   
+for t in range(1, Nt+ 1):
     #case where the particule is inside the local area ot the ghost    
-    Particle_info_right = [] #list of particles to send to r + 1 
-    Particle_info_left = [] #list of particles to send to r - 1
+    Particle_info_right = [] #list of particles to send to the right 
+    Particle_info_left = [] #list of particles to send to the left
+    Particle_info_up = [] # to up
+    Particle_info_down = [] #to down
     if len(Index_par_local) > 0 or len(Index_par_ghost_left) > 0 or len(Index_par_ghost_right) > 0 :
         #there is one particule inside the whole processor realm so we update their position; if no particule in the area it should return 00
         XY_local = XY_local_update #initializing the old value 
@@ -171,24 +174,30 @@ for t in range(1, Nt+ 1):
         XY_ghost_left_update = XY_ghost_left + Vp_ghost_left
         XY_ghost_right = XY_ghost_right_update
         XY_ghost_right_update = XY_ghost_right + Vp_ghost_right
+        XY_ghost_up = XY_ghost_up_update
+        XY_ghost_up_update = XY_ghost_up + Vp_ghost_up
+        XY_ghost_down = XY_ghost_down_update
+        XY_ghost_down_update = XY_ghost_down + Vp_ghost_down
+        
         #update the local first if it is out of bounds 
         for par in reversed(range(len(Index_par_local))):
             Index = Index_par_local[par] #index in the xy, vp and other
-            Position = XY_local_update[Index, 0]
-            #moving forward technically but also called when moving backward
-            if (Position >= (Local_right - Buffer_zone_width[0]) and not Local_sent_next[Index]): #xy >= ghost a du prochain
-                #The particule entered the ghost zone of the next processor, 
-                #we send it to the next proc if we havent yet
-                Particle_info_right.append((Index, XY_local_update[Index,:].copy(), Vp_local[Index,:].copy())) # index, position, velocity
-                Local_sent_next[Index] = True
-            elif ((Position < (Local_right - Buffer_zone_width[0]) or Position > Local_ghost_right )and Local_sent_next[Index]): #if it leaves on the other side back to false
+            Position_x = XY_local_update[Index, 0]
+            Position_y = XY_local_update[Index, 1]
+            #moving right technically but also called when moving backward
+            if (Position_x >= (Local_right - Buffer_zone_width[0]) and Local_down <= Position_y < Local_up and not Local_sent[Index, 0]): #xy >= ghost left du prochain
+                #The particule entered the left ghost zone of the left processor, 
+                #we send it to the right proc if we havent yet
+                Particle_info_right.append((Index, XY_local_update[Index,:].copy(), Vp_local[Index,:].copy())) # index, Position, velocity
+                Local_sent[Index,0] = True
+            elif ((Position_x < (Local_right - Buffer_zone_width[0]) or Position_x >= Local_ghost_right or Position_y >= Local_up or Position_y < Local_down) and Local_sent[Index, 0]): #if it leaves on the other side back to false
                 #print("The particule has left the proc")
-                Local_sent_next[Index] = False
-            elif Position >= Local_right:
-                #the particule left the main local proc area, enters the ghost are    
+                Local_sent[Index, 0] = False
+            elif Position_x >= Local_right and Local_up > Position_y >= Local_down:
+                #the particule left the main local proc area, enters the right ghost area    
                 Index_par_ghost_right.append(Index)#add the index to the end of the list  
                 Index_par_ghost_right_set.add(Index)        
-                XY_ghost_right_update[Index,:] = XY_local_update[Index, :].copy() #associate the local position with the ghost         
+                XY_ghost_right_update[Index,:] = XY_local_update[Index, :].copy() #associate the local Position with the ghost         
                 Vp_ghost_right[Index, :] = Vp_local[Index, :].copy() #associate the local speed with the ghost 
                 XY_local_update[Index, :] = [0, 0] #set the local to 00 
                 Vp_local[Index, :] = [0, 0] # set the local back to 00
@@ -196,17 +205,17 @@ for t in range(1, Nt+ 1):
                 Index_par_local_set.discard(Index)
             
             #rollback
-            elif (Position <= (Local_left + Buffer_zone_width[0]) and not Local_sent_prev[Index]):
-                #The particule entered the ghost zone of the "previous" processor,
-                #we send it to the prev proc if we havent yet
+            elif (Position_x <= (Local_left + Buffer_zone_width[0]) and Local_down <= Position_y < Local_up and not Local_sent[Index, 1]):
+                #The particule entered the right ghost zone of the left processor,
+                #we send it to the left proc if we havent yet
                 #print("position : ", XY_local_update[Index, 0], " proc: ", rank," start", Local_left, " buffer", Buffer_zone_width ) #check the particules sent
                 Particle_info_left.append((Index, XY_local_update[Index,:].copy(), Vp_local[Index,:].copy())) # index, position, velocity
-                Local_sent_prev[Index] = True
-            elif ((Position > (Local_left + Buffer_zone_width[0]) or Position < Local_ghost_left )and Local_sent_prev[Index]): #reset the boolean to ensure the particule can be sent again
+                Local_sent[Index, 1] = True
+            elif ((Position_x > (Local_left + Buffer_zone_width[0]) or Position_x < Local_ghost_left or Position_y >= Local_up or Position_y < Local_down )and Local_sent[Index, 1]): #reset the boolean to ensure the particule can be sent again
                 #print("The particule has left the proc") 
-                Local_sent_prev[Index] = False
-            elif XY_local_update[Index, 0] < Local_left:
-                #the particule left the main local proc area, enters the ghost a area    
+                Local_sent[Index, 1] = False
+            elif Position_x < Local_left and Local_down <= Position_y < Local_up :
+                #the particule left the main local proc area, enters the left ghost area    
                 Index_par_ghost_left.append(Index)#add the index to the end of the list
                 Index_par_ghost_left_set.add(Index)         
                 XY_ghost_left_update[Index,:] = XY_local_update[Index, :].copy() #associate the local position with the ghost         
@@ -214,31 +223,93 @@ for t in range(1, Nt+ 1):
                 XY_local_update[Index, :] = [0, 0] #set the local to 00 
                 Vp_local[Index, :] = [0, 0] # set the local back to 00
                 Index_par_local.pop(par)#remove from the particle index list
+                Index_par_local_set.discard(Index)
+            #up
+            elif (Position_y >= (Local_up - Buffer_zone_width[1]) and Local_ghost_left <= Position_x <= Local_ghost_right and not Local_sent[Index, 2]):
+                #the particle has entered the down ghost zone of the up proc
+                Particle_info_up.append((Index, XY_local_update[Index, :].copy(), Vp_local[Index, :].copy())) #index, position, velocity
+                Local_sent [Index, 2] = True  
+            elif ((Position_y < (Local_up - Buffer_zone_width[1]) or Position_x > Local_ghost_right or Position_x < Local_ghost_left) and Local_sent[Index, 2]): 
+                #reset the boolean
+                Local_sent [Index, 2] = False 
+            elif(Position_y >= Local_up and Local_ghost_left <= Position_x <= Local_ghost_right):
+                #the particle enters the ghost up area and leaves the local
+                Index_par_ghost_up.append(Index)#add the index to the end of the list
+                Index_par_ghost_up_set.add(Index)
+                XY_ghost_up_update[Index, :] = XY_local_update[Index, :].copy()#associate the updated local position with the up ghost
+                Vp_ghost_up[Index, :] = Vp_local[Index, :].copy() #local speed => ghost up speed for now( no collisions)
+                XY_local_update[Index, :] = [0, 0] #set the local to 00 
+                Vp_local[Index, :] = [0, 0] # set the local back to 00
+                Index_par_local.pop(par)#remove from the particle index list
+                Index_par_local_set.discard(Index)
+                
+            #down
+            elif (Position_y <= (Local_down + Buffer_zone_width[1]) and Local_ghost_left <= Position_x <= Local_ghost_right and not Local_sent[Index, 3]):
+                #the particle has entered the up ghost zone of hte down particle
+                Particle_info_down.append((Index, XY_local_update[Index, :].copy(), Vp_local[Index, :].copy())) #index, position, velocity
+                Local_sent [Index, 3] = True
+            elif ((Position_y > (Local_down + Buffer_zone_width[1]) or Position_x > Local_ghost_right or Position_x < Local_ghost_left) and Local_sent[Index, 3]): 
+                #reset the boolean
+                Local_sent [Index, 3] = False
+            elif(Position_y < Local_down and Local_ghost_left <= Position_x <= Local_ghost_right):
+                #the particle enters the ghost down area and leaves the local
+                Index_par_ghost_down.append(Index)#add the index to the end of the list
+                Index_par_ghost_down_set.add(Index)
+                XY_ghost_down_update[Index, :] = XY_local_update[Index, :].copy()#associate the updated local position with the down ghost
+                Vp_ghost_down[Index, :] = Vp_local[Index, :].copy() #local speed => ghost down speed for now( no collisions)
+                XY_local_update[Index, :] = [0, 0] #set the local to 00 
+                Vp_local[Index, :] = [0, 0] # set the local back to 00
+                Index_par_local.pop(par)#remove from the particle index list
                 Index_par_local_set.discard(Index)  
-        for par_b in reversed(range(len(Index_par_ghost_right))):
-            Index = Index_par_ghost_right[par_b] #index of the particule in the ghost b area to use for the xy vp which are indexed following the grand scheme to obliviate confusion
-            #2 cases for now forward or backward
-            #forward b to leave
-            if XY_ghost_right_update[Index, 0] > Local_ghost_right : 
-                #particule is leaving the ghost b area 
+                    
+        for par_right in reversed(range(len(Index_par_ghost_right))):
+            Index = Index_par_ghost_right[par_right] #index of the particule in the ghost b area to use for the xy vp which are indexed following the grand scheme to obliviate confusion
+            Position_x = XY_ghost_right_update[Index, 0]
+            Position_y = XY_ghost_right_update[Index, 1]
+            #4 cases for now forward or backward or up or down
+            #forward right to leave
+            if Position_x > Local_ghost_right and Local_down < Position_y <= Local_up: 
+                #particule is leaving the ghost right area 
                 XY_ghost_right_update[Index, :] = [0, 0] #technically, I already sent it so no send
                 Vp_ghost_right[Index, :] = [0, 0]
-                Index_par_ghost_right.pop(par_b) #remove the particule from the count
+                Index_par_ghost_right.pop(par_right) #remove the particule from the count
                 Index_par_ghost_right_set.discard(Index)
-            #roll back b to local
-            elif XY_ghost_right_update[Index, 0] < Local_right:
-                #the particule enters the local area and leaves the ghost b area
+            #roll back right to local
+            elif Position_x < Local_right and Local_down < Position_y <= Local_up:
+                #the particule enters the local area and leaves the ghost right area
                 Index_par_local.append(Index) #add the index to the list
                 Index_par_local_set.add(Index)
                 XY_local_update[Index, :] = XY_ghost_right_update[Index, :].copy() #update the local position of the particule
                 Vp_local[Index, :] = Vp_ghost_right[Index, :].copy() #Update the local speed of the particule
                 XY_ghost_right_update[Index, :] = [0, 0] #Remove the positon of the particule
                 Vp_ghost_right[Index, :] = [0, 0] #Remove the speed of the particule 
-                Index_par_ghost_right.pop(par_b) #Index of the new particule added
+                Index_par_ghost_right.pop(par_right) #Index of the new particule added
+                Index_par_local_set.discard(Index)
+            #up to the ghost up
+            elif Local_right <= Position_x <= Local_ghost_right and Position_y >= Local_up: 
+                #the particle enters the up ghost
+                Index_par_ghost_up.append(Index) #add the particle to the list
+                Index_par_ghost_up.add(Index)
+                XY_ghost_up_update[Index, :] = XY_ghost_right_update[Index, :].copy() # update the local position
+                Vp_ghost_up[Index, :] = Vp_ghost_right[Index, :].copy() #Update the local speed of the particule
+                XY_ghost_right_update[Index, :] = [0, 0] #Remove the positon of the particule
+                Vp_ghost_right[Index, :] = [0, 0] #Remove the speed of the particule 
+                Index_par_ghost_right.pop(par_right) #Index of the new particule added
+                Index_par_local_set.discard(Index)
+            #down to the down ghost
+            elif Local_right <= Position_x <= Local_ghost_right and Position_y < Local_down: 
+                #the particle enters the down ghost
+                Index_par_ghost_down.append(Index) #add the particle to the list
+                Index_par_ghost_down.add(Index)
+                XY_ghost_down_update[Index, :] = XY_ghost_right_update[Index, :].copy() # update the local position
+                Vp_ghost_down[Index, :] = Vp_ghost_right[Index, :].copy() #Update the local speed of the particule
+                XY_ghost_right_update[Index, :] = [0, 0] #Remove the positon of the particule
+                Vp_ghost_right[Index, :] = [0, 0] #Remove the speed of the particule 
+                Index_par_ghost_right.pop(par_right) #Index of the new particule added
                 Index_par_local_set.discard(Index)
             
-        for par_a in reversed(range(len(Index_par_ghost_left))):
-            Index = Index_par_ghost_left[par_a] #index of the particule in the ghost a area
+        for par_left in reversed(range(len(Index_par_ghost_left))):
+            Index = Index_par_ghost_left[par_left] #index of the particule in the ghost right area
             #2 cases froward or backward
             #forward a to local 
             if XY_ghost_left_update[Index, 0] >= Local_left:
@@ -249,19 +320,19 @@ for t in range(1, Nt+ 1):
                 Vp_local[Index, :] = Vp_ghost_left[Index, :].copy() #Update the local speed of the particule
                 XY_ghost_left_update[Index, :] = [0, 0] #Remove the positon of the particule
                 Vp_ghost_left[Index, :] = [0, 0] #Remove the speed of the particule 
-                Index_par_ghost_left.pop(par_a) #Index of the new particule added
+                Index_par_ghost_left.pop(par_left) #Index of the new particule added
                 Index_par_ghost_left_set.discard(Index)
             #rollback a to leave
             elif XY_ghost_left_update[Index, 0] < Local_ghost_left : 
-                #particule is leaving the ghost a area 
+                #particule is leaving the ghost right area 
                 XY_ghost_left_update[Index, :] = [0, 0] #technically, I already sent it so no send
                 Vp_ghost_left[Index, :] = [0, 0]
-                # if Local_sent_prev[Index] == True:
-                #     Local_sent_prev[Index] = False #set back to False
-                # else :
-                #     print("The particule was never sent to another proc, it is lost. \n")
-                Index_par_ghost_left.pop(par_a) #remove the particule from the count
+                Index_par_ghost_left.pop(par_left) #remove the particule from the count
                 Index_par_ghost_left_set.discard(Index) 
+        
+        #for par_up in reversed(range(len(Index_par_ghost_up))):
+            #Index = Index_par_ghost_up[par_up] #index of the particle in the ghost up area
+            
  
     #do the comms now, so that it send the whole list
     incoming_from_left = cart.sendrecv( sendobj = Particle_info_right, dest = right, sendtag = 0, source = left, recvtag = 0)
