@@ -15,6 +15,11 @@ rank = cart.Get_rank() #get the processor rank
 coordinates_x, coordinates_y = cart.Get_coords(rank) #coordinates in the respective proc
 left, right = cart.Shift(direction = 0, disp = 1) #left right proc => direction 0
 down, up = cart.Shift(direction = 1, disp = 1)# down up => direction 1
+#the following code works because it is periodic for now. to change if non periodic
+up_right = cart.Get_cart_rank([coordinates_x + 1, coordinates_y + 1])
+down_right = cart.Get_cart_rank([coordinates_x + 1, coordinates_y - 1])
+down_left = cart.Get_cart_rank([coordinates_x - 1 , coordinates_y - 1])
+up_left = cart.Get_cart_rank([coordinates_x - 1, coordinates_y + 1])
 #check neighbors => ok but keep for now
 #print(f"proc {rank}  → "f"left: {left}, right: {right}, "f"down: {down}, up: {up}")
 
@@ -735,30 +740,30 @@ for t in range(1, Nt+ 1):
     #sending a particule to the right, the tag helps identifying hte different sends (if it is going left or right)
     incoming_from_right = cart.sendrecv( sendobj = Particle_info_left, dest = left, sendtag = 1, source = right, recvtag = 1)
     #sending a particule to the left, tag = 1 for right to left
-    incoming_from_up = cart.sendrecv()
+    incoming_from_up = cart.sendrecv( sendobj = Particle_info_down, dest = down, sendtag = 2, source = up, recvtag = 2)
     #send a particle to down, 
-    incoming_from_down = cart.sendrecv()
+    incoming_from_down = cart.sendrecv( sendobj = Particle_info_up, dest = up, sendtag = 3, source = down, recvtag = 3)
     #send a particle to up
-    incoming_from_up_right = cart.sendrecv()
+    incoming_from_up_right = cart.sendrecv( sendobj = Particle_info_down_left, dest = down_left, sendtag = 4, source = up_right, recvtag = 4)
     #send a particle to down left
-    incoming_from_down_right = cart.sendrecv()
+    incoming_from_down_right = cart.sendrecv( sendobj = Particle_info_up_left, dest = up_left, sendtag = 5, source = down_right, recvtag = 5)
     #send a particle from up left
-    incoming_from_down_left = cart.sendrecv()
+    incoming_from_down_left = cart.sendrecv(sendobj = Particle_info_up_right, dest = up_right, sendtag = 6, source = down_left, recvtag = 6)
     #send a particle from up right
-    incoming_from_up_left = cart.sendrecv()
+    incoming_from_up_left = cart.sendrecv(sendobj = Particle_info_down_right, dest = down_right, sendtag = 7, source = up_left, recvtag = 7)
     #SEND a particle from down right
     
     
     
     #how to deal with the new data
+    #incoming from left = ghost left
     if incoming_from_left is None: #if null
         incoming_from_left = [] #set to empty to be able to loop on it without errors
     # else :
     #     print("incoming from left: ", incoming_from_left)
-    
     for Index, pos, vel in incoming_from_left: #for all the different particles
         #add to ghost a
-        if rank == 0:
+        if coordinates_x == 0:
             pos[0] = pos[0] - L_total[0] #if it comes from the last proc, the position is equal to 
         if Index not in Index_par_ghost_left_set:
             Index_par_ghost_left.append(Index) #add the particle index
@@ -766,21 +771,92 @@ for t in range(1, Nt+ 1):
             XY_ghost_left_update[Index] = pos #associate the postion
             Vp_ghost_left[Index] = vel #and velocity
 
-    
+    #incoming from right = ghost right
     if incoming_from_right is None: #if null
         incoming_from_right = [] #set to empty to be able to loop on it without errors
     # else :
-    #     print("incoming from right : ", incoming_from_right)
-                
+    #     print("incoming from right : ", incoming_from_right)           
     for Index, pos, vel in incoming_from_right: #for all the different particles
         #add to ghost b
-        if rank == size - 1:
+        if coordinates_x == (dimensions_proc[0] - 1) :
             pos[0] = pos[0] + L_total[0] #if it comes from the first proc, te position is equal to 
         if Index not in Index_par_ghost_right_set:
             Index_par_ghost_right.append(Index)
             Index_par_ghost_right_set.add(Index)
             XY_ghost_right_update[Index] = pos
             Vp_ghost_right[Index] = vel
+    
+    #incoming from up = ghost up
+    if incoming_from_up is None:
+        incoming_from_up = []
+    for Index, pos, vel in incoming_from_up:
+        if rank ==?:
+            
+        if Index not in Index_par_ghost_up_set:
+            Index_par_ghost_up.append(Index)
+            Index_par_ghost_up_set.add(Index)
+            XY_ghost_up_update[Index] = pos
+            Vp_ghost_up[Index] = vel
+    
+    #incoming from down = ghost down
+    if incoming_from_down is None:
+        incoming_from_down = []
+    for Index, pos, vel in incoming_from_down:
+        if rank ==?:
+            pos = pos
+        if Index not in Index_par_ghost_down_set:
+            Index_par_ghost_down.append(Index)
+            Index_par_ghost_down_set.add(Index)
+            XY_ghost_down_update[Index] = pos
+            Vp_ghost_down[Index] = vel
+    
+    #incoming from up right = ghost up right
+    if incoming_from_up_right is None:
+        incoming_from_up_right = []
+    for Index, pos, vel in incoming_from_up_right:
+        if rank == ?:
+            pos = pos
+        if Index not in Index_par_ghost_up_right_set:
+            Index_par_ghost_up_right.append(Index)
+            Index_par_ghost_up_right_set.add(Index)
+            XY_ghost_up_right_update[Index] = pos
+            Vp_ghost_up_right[Index] = vel
+    
+    #incoming from down right = ghost down right
+    if incoming_from_down_right is None:
+        incoming_from_down_right = []
+    for Index, pos, vel in incoming_from_down_right:
+        if rank == ?:
+            pos = pos
+        if Index not in Index_par_ghost_down_right_set:
+            Index_par_ghost_down_right.append(Index)
+            Index_par_ghost_down_right_set.add(Index)
+            XY_ghost_down_right_update[Index] = pos
+            Vp_ghost_down_right[Index] = vel
+    
+    #incoming from down left = ghost down left
+    if incoming_from_down_left is None:
+        incoming_from_down_left = []
+    for Index, pos, vel in incoming_from_down_left:
+        if rank == ?:
+            pos = pos
+        if Index not in Index_par_ghost_down_left_set:
+            Index_par_ghost_down_left.append(Index)
+            Index_par_ghost_down_left_set.add(Index)
+            XY_ghost_down_left_update[Index] = pos
+            Vp_ghost_down_left[Index] = vel
+            
+    #incoming from up left = ghost up left
+    if incoming_from_up_left is None:
+        incoming_from_up_left = []
+    for Index, pos, vel in incoming_from_up_left:
+        if rank == ?:
+            pos = pos
+        if Index not in Index_par_ghost_up_left_set:
+            Index_par_ghost_up_left.append(Index)
+            Index_par_ghost_up_left_set.add(Index)
+            XY_ghost_up_left_update[Index] = pos
+            Vp_ghost_up_left[Index] = vel
             
     XY_local_saved[t - 1, :, :] = XY_local
 
@@ -800,8 +876,6 @@ if rank == 0: #the proc 0 will receive all of the other locally saved positoins 
            
 else :
     cart.send(XY_local_saved, dest = 0)
-
-
 
 #printing and ploting
 if rank == 0:
