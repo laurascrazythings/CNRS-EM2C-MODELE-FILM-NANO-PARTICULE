@@ -40,17 +40,19 @@ Lx, Ly = L_total
 Px, Py = dimensions_proc #neded to set the lines later 
 
 #Particles - TO SET
-Num_Particules = 1 #for now
+Num_Particules = 20 #for now
 
 #particules init - DO NOT TOUCH
 if rank == 1: #do not overload proc 0 , need the if so that the rand doesnt run for each proc
-    XY_start = np.empty((Num_Particules,2)) #particule start position 
-    XY_start[:, 0] = 3#np.random.uniform(low = 0, high = L_total[0], size = Num_Particules) #rand the position
-    XY_start[:, 1] = 0.0#np.random.uniform(low = 0, high = L_total[1], size = Num_Particules)
+    
     #velocity rand
     Vp = np.zeros((Num_Particules,2))
     Vp[:, 0] = np.random.uniform(low = -1.3, high = 1.3, size = Num_Particules)
     Vp[:, 1] = np.random.uniform(low = -1.3, high = 1.3, size = Num_Particules)
+    #position rand - position after to ensure that the position the particules can be on arent in the 0 to buffer are where it would not be able to be sent periodically 
+    XY_start = np.empty((Num_Particules,2)) #particule start position 
+    XY_start[:, 0] = np.random.uniform(low = (0 + np.max(np.abs(Vp[:,0]))) , high = (L_total[0] - np.max(np.abs(Vp[:,0]))), size = Num_Particules) #rand the position
+    XY_start[:, 1] = np.random.uniform(low = (0 + np.max(np.abs(Vp[:,1]))), high = (L_total[1] - np.max(np.abs(Vp[:,1]))), size = Num_Particules)
 else: 
     XY_start = None
     Vp = None
@@ -180,7 +182,9 @@ for p in range(Num_Particules):
         Index_par_ghost_up_left.append(p)
         Index_par_ghost_up_left_set.add(p)
         XY_ghost_up_left[p, :] = XY_start[p, :]
-        Vp_ghost_up_left[p, :] = Vp[p, :] * dt #movment during one dt ( = distance in one dt)  
+        Vp_ghost_up_left[p, :] = Vp[p, :] * dt #movment during one dt ( = distance in one dt)
+    #because of the periodical condition, the ghosts of the borders is actually on the other side, it can cause some distubances in the t =0 because the particle dont fall into any categories    
+        
 
 # for 2d start to change here 
 
@@ -758,8 +762,8 @@ for t in range(1, Nt+ 1):
     #incoming from left = ghost left
     if incoming_from_left is None: #if null
         incoming_from_left = [] #set to empty to be able to loop on it without errors
-    elif incoming_from_left != []:
-         print("incoming from left: ", incoming_from_left)
+    # elif incoming_from_left != []:
+    #      print("incoming from left: ", incoming_from_left)
     for Index, pos, vel in incoming_from_left: #for all the different particles
         #add to ghost left
         if coordinates_x == 0:
@@ -773,12 +777,11 @@ for t in range(1, Nt+ 1):
     #incoming from right = ghost right
     if incoming_from_right is None: #if null
         incoming_from_right = [] #set to empty to be able to loop on it without errors
-    elif incoming_from_right != [] :
-         print("incoming from right : ", incoming_from_right)           
+    # elif incoming_from_right != [] :
+    #      print("incoming from right : ", incoming_from_right)           
     for Index, pos, vel in incoming_from_right: #for all the different particles
         #add to ghost b
         if coordinates_x == (dimensions_proc[0] - 1) :
-            print(pos)
             pos[0] = pos[0] + L_total[0] #if it comes from the first proc, te position is equal to 
         if Index not in Index_par_ghost_right_set:
             Index_par_ghost_right.append(Index)
@@ -789,8 +792,8 @@ for t in range(1, Nt+ 1):
     #incoming from up = ghost up
     if incoming_from_up is None:
         incoming_from_up = []
-    elif incoming_from_up != []:
-         print("incoming from up: ", incoming_from_up)
+    # elif incoming_from_up != []:
+    #      print("incoming from up: ", incoming_from_up)
     for Index, pos, vel in incoming_from_up:
         if coordinates_y == (dimensions_proc[1] - 1):
             pos[1] = pos[1] + L_total[1]
@@ -803,8 +806,8 @@ for t in range(1, Nt+ 1):
     #incoming from down = ghost down
     if incoming_from_down is None:
         incoming_from_down = []
-    elif incoming_from_down != []:
-         print("incoming from down: ", incoming_from_down)
+    # elif incoming_from_down != []:
+    #      print("incoming from down: ", incoming_from_down)
     for Index, pos, vel in incoming_from_down:
         if coordinates_y == 0:
             pos[1] = pos[1] - L_total[1]
@@ -817,8 +820,8 @@ for t in range(1, Nt+ 1):
     #incoming from up right = ghost up right
     if incoming_from_up_right is None:
         incoming_from_up_right = []
-    elif incoming_from_up_right != []:
-         print("incoming from up right: ", incoming_from_up_right)
+    # elif incoming_from_up_right != []:
+    #      print("incoming from up right: ", incoming_from_up_right)
     for Index, pos, vel in incoming_from_up_right:
         if coordinates_x == (dimensions_proc[0] - 1) and coordinates_y == (dimensions_proc[1] - 1):
             pos = pos + L_total
@@ -831,8 +834,8 @@ for t in range(1, Nt+ 1):
     #incoming from down right = ghost down right
     if incoming_from_down_right is None:
         incoming_from_down_right = []
-    elif incoming_from_down_right != []:
-         print("incoming from down right: ", incoming_from_down_right)
+    # elif incoming_from_down_right != []:
+    #      print("incoming from down right: ", incoming_from_down_right)
     for Index, pos, vel in incoming_from_down_right:
         if coordinates_x == (dimensions_proc[0] - 1) and coordinates_y == 0:
             pos[0] = pos[0] + L_total[0]
@@ -846,8 +849,8 @@ for t in range(1, Nt+ 1):
     #incoming from down left = ghost down left
     if incoming_from_down_left is None:
         incoming_from_down_left = []
-    elif incoming_from_down_left != []:
-         print("incoming from down left: ", incoming_from_down_left)
+    # elif incoming_from_down_left != []:
+    #      print("incoming from down left: ", incoming_from_down_left)
     for Index, pos, vel in incoming_from_down_left:
         if coordinates_x == 0 and coordinates_y == 0:
             pos = pos - L_total
@@ -860,8 +863,8 @@ for t in range(1, Nt+ 1):
     #incoming from up left = ghost up left
     if incoming_from_up_left is None:
         incoming_from_up_left = []
-    elif incoming_from_up_left != []:
-         print("incoming from up left: ", incoming_from_up_left)
+    # elif incoming_from_up_left != []:
+    #      print("incoming from up left: ", incoming_from_up_left)
     for Index, pos, vel in incoming_from_up_left:
         if coordinates_x == 0 and coordinates_y == (dimensions_proc[1] - 1):
             pos[0] = pos[0] - L_total[0]
@@ -889,7 +892,7 @@ if rank == 0: #the proc 0 will receive all of the other locally saved positoins 
                         dy = XY_master_saved[t, i, 1] - XY_source_saved[t, i, 1]
                         remainer_x = dx % L_total[0] 
                         remainer_y = dy % L_total[1]
-                        if not (np.allclose(remainer_x, 0.0) or np.allclose(remainer_x, 20.0)) and (np.allclose(remainer_y,0.0) or np.allclose(remainer_y,20.0)) :
+                        if not (np.allclose(remainer_x, 0.0) or np.allclose(remainer_x, L_total[0])) and (np.allclose(remainer_y,0.0) or np.allclose(remainer_y,L_total[1])) :
                             print("The position ",XY_source_saved[t, i, :] , " for particule ", i, " in proc: ", source, " is different than in the master at t = ", t, "\n", " which is : ", XY_master_saved[t, i, :])
                                    
            
