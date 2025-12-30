@@ -10,7 +10,7 @@ size = comm.Get_size() #get the total num of processors
 
 #2D cart : initialize the dim using cartesian mpi built in functions - DO NOT TOUCH
 dimensions_proc = MPI.Compute_dims(size, [0, 0]) #computes the dimesions of each proc
-cart = comm.Create_cart(dims = dimensions_proc, periods = [True, True] , reorder = False)
+cart = comm.Create_cart(dims = dimensions_proc, periods = [True, True] , reorder = True)
 rank = cart.Get_rank() #get the processor rank
 coordinates_x, coordinates_y = cart.Get_coords(rank) #coordinates in the respective proc
 left, right = cart.Shift(direction = 0, disp = 1) #left right proc => direction 0
@@ -27,7 +27,7 @@ up_left = cart.Get_cart_rank([coordinates_x - 1, coordinates_y + 1])
 plt.clf() 
 
 #time - TO SET
-T =  2# seconds to change
+T =  10# seconds to change
 dt = 0.05 #delta t 
 Nt = int(T/ dt) #num of Iterations
 
@@ -40,18 +40,20 @@ Lx, Ly = L_total
 Px, Py = dimensions_proc #neded to set the lines later 
 
 #Particles - TO SET
-Num_Particules = 1#for now
+Num_Particules = 1000#for now
 
 #particules init - DO NOT TOUCH
 if rank == 1: #do not overload proc 0 , need the if so that the rand doesnt run for each proc 
     #velocity rand
     Vp = np.zeros((Num_Particules,2))
-    Vp[:, 0] = 1#np.random.uniform(low = -1.3, high = 1.3, size = Num_Particules)
-    Vp[:, 1] = 1#np.random.uniform(low = -1.3, high = 1.3, size = Num_Particules)
+    Vp[:, 0] = np.random.uniform(low = -1.3, high = 1.3, size = Num_Particules)
+    Vp[:, 1] = np.random.uniform(low = -1.3, high = 1.3, size = Num_Particules)
+    
     #position rand - position after to ensure that the position the particules can be on arent in the 0 to buffer are where it would not be able to be sent periodically 
-    XY_start = np.empty((Num_Particules,2)) #particule start position 
-    XY_start[:, 0] = 19.9#np.random.uniform(low = (0 + np.max(np.abs(Vp[:,0]))) , high = (L_total[0] - np.max(np.abs(Vp[:,0]))), size = Num_Particules) #rand the position
-    XY_start[:, 1] = 9.8#np.random.uniform(low = (0 + np.max(np.abs(Vp[:,1]))), high = (L_total[1] - np.max(np.abs(Vp[:,1]))), size = Num_Particules)
+    XY_start = np.zeros((Num_Particules,2)) #particule start position 
+    XY_start[:, 0] = np.random.uniform(low = (0 + np.max(np.abs(Vp[:,0]))) , high = (L_total[0] - np.max(np.abs(Vp[:,0]))), size = Num_Particules) #rand the position
+    XY_start[:, 1] = np.random.uniform(low = (0 + np.max(np.abs(Vp[:,1]))), high = (L_total[1] - np.max(np.abs(Vp[:,1]))), size = Num_Particules)
+    
 else: 
     XY_start = None
     Vp = None
@@ -62,7 +64,7 @@ Vp = cart.bcast(Vp, root = 1)
 
 #Local MESH - DO NOT TOUCH
 #Local_width = np.array([L_total[0]/ size , L_total[1]]) # Width of 1 area and height
-Buffer_zone_width = np.array([np.max(np.abs(Vp[:,0])) * dt * 2, np.max(np.abs(Vp[:,1])) * dt * 2]) #Buffer depend on the velocity of the particule, for now in 1 D - to change for 2D
+Buffer_zone_width = np.array([np.max(np.abs(Vp[:,0])) * dt * 2.01, np.max(np.abs(Vp[:,1])) * dt * 2.01]) #Buffer depends on the velocity of the particule, more than 2 to ensure that a particule pings twice 
 
 #Each Proc - DO NOT TOUCH
 Local_left = np.array([0]) # defining the left before being rewritten
@@ -212,8 +214,6 @@ Local_sent = np.zeros((Num_Particules,8), dtype = bool) #[:,0] : right; [:,1]: l
 
 
 for t in range(1, Nt+ 1):
-    # if rank == 0:
-    #     print(t)
     #case where the particule is inside the local area ot the ghost    
     Particle_info_right = [] #list of particles to send to the right 
     Particle_info_left = [] #list of particles to send to the left
@@ -242,8 +242,7 @@ for t in range(1, Nt+ 1):
         XY_ghost_down_left = XY_ghost_down_left_update
         XY_ghost_down_left_update = XY_ghost_down_left + Vp_ghost_down_left
         XY_ghost_up_left = XY_ghost_up_left_update
-        XY_ghost_up_left_update = XY_ghost_up_left + Vp_ghost_up_left
-            
+        XY_ghost_up_left_update = XY_ghost_up_left + Vp_ghost_up_left 
         
         #now we have dealt with the transition from local to the ghosts, 
         # we have to deal with inter ghost and leaving interactions, for each ghost, there are 4 interactions possible.    
@@ -628,8 +627,7 @@ for t in range(1, Nt+ 1):
         for par in reversed(range(len(Index_par_local))):
             Index = Index_par_local[par] #index in the xy, vp and other
             Position_x = XY_local_update[Index, 0]
-            Position_y = XY_local_update[Index, 1]
-            
+            Position_y = XY_local_update[Index, 1]                
             #gathering the non covering cnditions to improve run time if and elifs that dont break the code basically
             #moving right -- technically but also called when moving backward
             if (Local_right > Position_x >= (Local_right - Buffer_zone_width[0]) and (Local_down + Buffer_zone_width[1]) <= Position_y < (Local_up - Buffer_zone_width[1]) and not Local_sent[Index, 0]): #xy >= ghost left du prochain
@@ -664,7 +662,7 @@ for t in range(1, Nt+ 1):
                 Particle_info_up.append((Index, XY_local_update[Index, :].copy(), Vp_local[Index, :].copy())) #index, position, velocity
                 Local_sent [Index, 2] = True
                 #left of the right
-                Particle_info_left.append((Index, XY_local_update[Index,:].copy(), Vp_local[Index,:].copy())) # index, position, velocity
+                Particle_info_right.append((Index, XY_local_update[Index,:].copy(), Vp_local[Index,:].copy())) # index, position, velocity
                 Local_sent[Index, 1] = True   
             #down-right
             elif (Local_down <= Position_y < (Local_down + Buffer_zone_width[1]) and Local_right > Position_x >= (Local_right - Buffer_zone_width[0]) and not Local_sent[Index, 5]):
@@ -675,7 +673,7 @@ for t in range(1, Nt+ 1):
                 Particle_info_down.append((Index, XY_local_update[Index, :].copy(), Vp_local[Index, :].copy())) #index, position, velocity
                 Local_sent [Index, 3] = True
                 #left of the right
-                Particle_info_left.append((Index, XY_local_update[Index,:].copy(), Vp_local[Index,:].copy())) # index, position, velocity
+                Particle_info_right.append((Index, XY_local_update[Index,:].copy(), Vp_local[Index,:].copy())) # index, position, velocity
                 Local_sent[Index, 1] = True
             #down-left
             elif (Local_down < Position_y < (Local_down + Buffer_zone_width[1]) and Local_left < Position_x <= (Local_left + Buffer_zone_width[0]) and not Local_sent[Index, 6]):
@@ -686,7 +684,7 @@ for t in range(1, Nt+ 1):
                 Particle_info_down.append((Index, XY_local_update[Index, :].copy(), Vp_local[Index, :].copy())) #index, position, velocity
                 Local_sent [Index, 3] = True
                 #right of the left
-                Particle_info_right.append((Index, XY_local_update[Index,:].copy(), Vp_local[Index,:].copy())) # index, Position, velocity
+                Particle_info_left.append((Index, XY_local_update[Index,:].copy(), Vp_local[Index,:].copy())) # index, Position, velocity
                 Local_sent[Index,0] = True   
             #up left
             elif (Local_up > Position_y >= (Local_up - Buffer_zone_width[1]) and Local_left < Position_x <= (Local_left + Buffer_zone_width[0]) and not Local_sent[Index, 7]):
@@ -697,7 +695,7 @@ for t in range(1, Nt+ 1):
                 Particle_info_up.append((Index, XY_local_update[Index, :].copy(), Vp_local[Index, :].copy())) #index, position, velocity
                 Local_sent [Index, 2] = True
                 #right of the left
-                Particle_info_right.append((Index, XY_local_update[Index,:].copy(), Vp_local[Index,:].copy())) # index, Position, velocity
+                Particle_info_left.append((Index, XY_local_update[Index,:].copy(), Vp_local[Index,:].copy())) # index, Position, velocity
                 Local_sent[Index,0] = True 
                 
             #particule is leaving the local area for a ghost position    
@@ -901,9 +899,11 @@ for t in range(1, Nt+ 1):
         incoming_from_up_right = []
     # elif incoming_from_up_right != []:
     #     print("incoming from up right: ", incoming_from_up_right)
-    # for Index, pos, vel in incoming_from_up_right:
-        if coordinates_x == (dimensions_proc[0] - 1) and coordinates_y == (dimensions_proc[1] - 1):
-            pos = pos + L_total
+    for Index, pos, vel in incoming_from_up_right:
+        if coordinates_x == (dimensions_proc[0] - 1):
+            pos[0] = pos[0] + L_total[0]
+        if coordinates_y == (dimensions_proc[1] - 1):
+            pos[1] = pos[1] + L_total[1]
         if Index not in Index_par_ghost_up_right_set:
             Index_par_ghost_up_right.append(Index)
             Index_par_ghost_up_right_set.add(Index)
@@ -915,9 +915,10 @@ for t in range(1, Nt+ 1):
         incoming_from_down_right = []
     # elif incoming_from_down_right != []:
     #      print("incoming from down right: ", incoming_from_down_right)
-    # for Index, pos, vel in incoming_from_down_right:
-        if coordinates_x == (dimensions_proc[0] - 1) and coordinates_y == 0:
+    for Index, pos, vel in incoming_from_down_right:
+        if coordinates_x == (dimensions_proc[0] - 1) :
             pos[0] = pos[0] + L_total[0]
+        if coordinates_y == 0:
             pos[1] = pos[1] - L_total[1]
         if Index not in Index_par_ghost_down_right_set:
             Index_par_ghost_down_right.append(Index)
@@ -928,11 +929,13 @@ for t in range(1, Nt+ 1):
     #incoming from down left = ghost down left
     if incoming_from_down_left is None:
         incoming_from_down_left = []
-    # elif incoming_from_down_left != []:
-    #      print("incoming from down left: ", incoming_from_down_left)
+    #elif incoming_from_down_left != []:
+    #     print("incoming from down left: ", incoming_from_down_left)
     for Index, pos, vel in incoming_from_down_left:
-        if coordinates_x == 0 and coordinates_y == 0:
-            pos = pos - L_total
+        if coordinates_x == 0 :
+            pos[0] = pos[0] - L_total[0]
+        if coordinates_y == 0:
+            pos[1] = pos[1] - L_total[1]
         if Index not in Index_par_ghost_down_left_set:
             Index_par_ghost_down_left.append(Index)
             Index_par_ghost_down_left_set.add(Index)
@@ -945,8 +948,9 @@ for t in range(1, Nt+ 1):
     # elif incoming_from_up_left != []:
     #      print("incoming from up left: ", incoming_from_up_left)
     for Index, pos, vel in incoming_from_up_left:
-        if coordinates_x == 0 and coordinates_y == (dimensions_proc[1] - 1):
+        if coordinates_x == 0:
             pos[0] = pos[0] - L_total[0]
+        if coordinates_y == (dimensions_proc[1] - 1):
             pos[1] = pos[1] + L_total[1]
         if Index not in Index_par_ghost_up_left_set:
             Index_par_ghost_up_left.append(Index)
