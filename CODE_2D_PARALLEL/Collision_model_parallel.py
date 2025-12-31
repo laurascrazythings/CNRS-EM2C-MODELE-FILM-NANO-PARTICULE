@@ -2,11 +2,14 @@
 from mpi4py import MPI #mpi
 import numpy as np #np calculation
 import matplotlib.pyplot as plt #plotting
+import time
 from matplotlib.animation import FuncAnimation, FFMpegWriter #animation
+
 
 #mpi init the domain of mpi - DO NOT TOUCH
 comm = MPI.COMM_WORLD #INIT the mpi
 size = comm.Get_size() #get the total num of processors
+t0 = time.perf_counter() # register the time it was when it started
 
 #2D cart : initialize the dim using cartesian mpi built in functions - DO NOT TOUCH
 dimensions_proc = MPI.Compute_dims(size, [0, 0]) #computes the dimesions of each proc
@@ -35,12 +38,12 @@ Nt = int(T/ dt) #num of Iterations
 save_gif_animation = True 
 
 #Mesh - TO SET
-L_total = np.array([20, 20]) #Total Size in microm
+L_total = np.array([50, 50]) #Total Size in microm
 Lx, Ly = L_total
 Px, Py = dimensions_proc #neded to set the lines later 
 
 #Particles - TO SET
-Num_Particules = 1000#for now
+Num_Particules = 10000#for now
 
 #particules init - DO NOT TOUCH
 if rank == 1: #do not overload proc 0 , need the if so that the rand doesnt run for each proc 
@@ -212,7 +215,7 @@ XY_local_saved[0,:,:] = XY_local.copy()
 # that it doesnt resend it, will be reset to false when the particule leaves the proc t enable rollback
 Local_sent = np.zeros((Num_Particules,8), dtype = bool) #[:,0] : right; [:,1]: left; [:,2]: up; [:,3]: down [:,4] : up right; [:,5]: down right; [:,6]: down left; [:,7]: up left
 
-
+#time loop to update the map
 for t in range(1, Nt+ 1):
     #case where the particule is inside the local area ot the ghost    
     Particle_info_right = [] #list of particles to send to the right 
@@ -982,6 +985,8 @@ if rank == 0: #the proc 0 will receive all of the other locally saved positoins 
 else :
     cart.send(XY_local_saved, dest = 0)
 
+comm.Barrier()
+t1 = time.perf_counter()
 #printing and ploting
 if rank == 0:
     
@@ -1045,6 +1050,10 @@ if rank == 0:
     ani.save("particle_animation.mp4", writer=writer)
 
     plt.close(fig)#not showing but saving
+    #time print
+    t2 = time.perf_counter()
+    print("For ", size, ", the runtime before the mp4 is: ", t1 - t0)
+    print("For ", size, ", the runtime with the mp4 is : ", t2 - t0)
        
 MPI.Finalize # stop the parallelization
 
