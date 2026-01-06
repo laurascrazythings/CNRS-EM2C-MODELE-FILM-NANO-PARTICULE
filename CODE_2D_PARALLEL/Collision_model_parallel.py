@@ -30,40 +30,50 @@ up_left = cart.Get_cart_rank([coordinates_x - 1, coordinates_y + 1])
 plt.clf() 
 
 #time - TO SET
-T =  10# seconds to change
+T = 10 # seconds to change
+T_add_particles = 4 #time for which I add particles for 
 dt = 0.05 #delta t 
+
 Nt = int(T/ dt) #num of Iterations
 
 # save animation as a GIF? - To SET 
 save_gif_animation = True 
 
 #Mesh - TO SET
-L_total = np.array([50, 50]) #Total Size in microm
+L_total = np.array([20, 20]) #Total Size in microm
+#DO NOT TOUCH
 Lx, Ly = L_total
 Px, Py = dimensions_proc #neded to set the lines later 
 
 #Particles - TO SET
-Num_Particules = 10000#for now
-
+Num_Particules = 100 #particles to start 
+Num_particules_dt = 3 #particles added per dt
+#total number of particles by the end to create the right arrays and not resize(costly) - DO NOT TOUCH
+Num_Particules_end = int(Num_Particules +  Num_particules_dt * (T_add_particles/ dt))
 #particules init - DO NOT TOUCH
-if rank == 1: #do not overload proc 0 , need the if so that the rand doesnt run for each proc 
+if rank == 1: #do not overload proc 0, need the if so that the rand doesnt run for each proc 
     #velocity rand
-    Vp = np.zeros((Num_Particules,2))
-    Vp[:, 0] = np.random.uniform(low = -1.3, high = 1.3, size = Num_Particules)
-    Vp[:, 1] = np.random.uniform(low = -1.3, high = 1.3, size = Num_Particules)
-    
+    Vp = np.zeros((Num_Particules_end,2))
+    Vp[:, 0] = np.random.uniform(low = -1.3, high = 1.3, size = Num_Particules_end)
+    Vp[:Num_Particules, 1] = np.random.uniform(low = -1.3, high = 1.3, size = Num_Particules)
+    Vp[Num_Particules:Num_Particules_end, 1] = np.random.uniform(low = 0, high = 1.3, size = Num_Particules_end - Num_Particules)
     #position rand - position after to ensure that the position the particules can be on arent in the 0 to buffer are where it would not be able to be sent periodically 
-    XY_start = np.zeros((Num_Particules,2)) #particule start position 
-    XY_start[:, 0] = np.random.uniform(low = (0 + np.max(np.abs(Vp[:,0]))) , high = (L_total[0] - np.max(np.abs(Vp[:,0]))), size = Num_Particules) #rand the position
-    XY_start[:, 1] = np.random.uniform(low = (0 + np.max(np.abs(Vp[:,1]))), high = (L_total[1] - np.max(np.abs(Vp[:,1]))), size = Num_Particules)
+    XY_start = np.zeros((Num_Particules_end,2)) #particule start position 
+    XY_start[:, 0] = np.random.uniform(low = (0 + np.max(np.abs(Vp[:,0]))) , high = (L_total[0] - np.max(np.abs(Vp[:,0]))), size = Num_Particules_end) #rand the position
+    XY_start[:Num_Particules, 1] = np.random.uniform(low = (0 + np.max(np.abs(Vp[:,1]))), high = (L_total[1] - np.max(np.abs(Vp[:,1]))), size = Num_Particules)
+    XY_start[Num_Particules:Num_Particules_end, 1] = -0.01
+    #register the transparent particles: the ones that are not displayed yet
+    Added_par = np.zeros((Num_Particules_end), dtype = bool) 
+    Added_par[:Num_Particules] = True
     
 else: 
     XY_start = None
     Vp = None
-
+    Added_par = None
+#broadcast the values to the different procs
 XY_start = cart.bcast(XY_start, root = 1)
 Vp = cart.bcast(Vp, root = 1)
-
+Added_par = cart.bcast(Added_par, root = 1)
 
 #Local MESH - DO NOT TOUCH
 #Local_width = np.array([L_total[0]/ size , L_total[1]]) # Width of 1 area and height
@@ -96,26 +106,26 @@ Local_ghost_down = Local_down - Buffer_zone_width[1] #the ghost zone ends
 # print("Local Ghost End for processor ", rank, " is : ", Local_ghost_right, "\n")
 
 # Particule position - to change - set to empty for now- pay attention in case some particules have a 00 position and 00 velocity might not work
-XY_local = np.zeros((Num_Particules,2))
-XY_ghost_left = np.zeros((Num_Particules,2))
-XY_ghost_right = np.zeros((Num_Particules,2))
-XY_ghost_up = np.zeros((Num_Particules,2))
-XY_ghost_down = np.zeros((Num_Particules,2))
-XY_ghost_up_right = np.zeros((Num_Particules,2))
-XY_ghost_down_right = np.zeros((Num_Particules,2))
-XY_ghost_down_left = np.zeros((Num_Particules,2))
-XY_ghost_up_left = np.zeros((Num_Particules,2))
+XY_local = np.zeros((Num_Particules_end,2))
+XY_ghost_left = np.zeros((Num_Particules_end,2))
+XY_ghost_right = np.zeros((Num_Particules_end,2))
+XY_ghost_up = np.zeros((Num_Particules_end,2))
+XY_ghost_down = np.zeros((Num_Particules_end,2))
+XY_ghost_up_right = np.zeros((Num_Particules_end,2))
+XY_ghost_down_right = np.zeros((Num_Particules_end,2))
+XY_ghost_down_left = np.zeros((Num_Particules_end,2))
+XY_ghost_up_left = np.zeros((Num_Particules_end,2))
 
 # Particule speeds- set to empty for now
-Vp_local = np.zeros((Num_Particules,2))
-Vp_ghost_left = np.zeros((Num_Particules,2))
-Vp_ghost_right = np.zeros((Num_Particules,2))
-Vp_ghost_up = np.zeros((Num_Particules,2))
-Vp_ghost_down = np.zeros((Num_Particules,2))
-Vp_ghost_up_right = np.zeros((Num_Particules,2))
-Vp_ghost_down_right = np.zeros((Num_Particules,2))
-Vp_ghost_down_left = np.zeros((Num_Particules,2))
-Vp_ghost_up_left = np.zeros((Num_Particules,2))
+Vp_local = np.zeros((Num_Particules_end,2))
+Vp_ghost_left = np.zeros((Num_Particules_end,2))
+Vp_ghost_right = np.zeros((Num_Particules_end,2))
+Vp_ghost_up = np.zeros((Num_Particules_end,2))
+Vp_ghost_down = np.zeros((Num_Particules_end,2))
+Vp_ghost_up_right = np.zeros((Num_Particules_end,2))
+Vp_ghost_down_right = np.zeros((Num_Particules_end,2))
+Vp_ghost_down_left = np.zeros((Num_Particules_end,2))
+Vp_ghost_up_left = np.zeros((Num_Particules_end,2))
 #setting the particule index key
 #num of particules per processor calculated thanks to len (Index)
 Index_par_local = []
@@ -139,7 +149,7 @@ Index_par_ghost_up_left_set = set ()
  
 #Initialisation 
 # of particules placement, keeping track of which particule is where (kind of like a master key)
-for p in range(Num_Particules): 
+for p in range(Num_Particules_end): 
     Position_x = XY_start[p, 0]
     Position_y = XY_start[p, 1]
     if Local_left <= Position_x < Local_right and Local_down <= Position_y < Local_up: #for now the processor has a particule if it is in
@@ -206,18 +216,23 @@ XY_ghost_up_left_update = XY_ghost_up_left.copy()
 
 #initiate the saving of information
 #I wonder if I should print the particles in the ghost areas as well in different colors... For now, only the local xy will be printed
-XY_master_saved = np.zeros((Nt, Num_Particules, 2)) #use at the end when merging the info
-XY_local_saved = np.zeros((Nt, Num_Particules, 2)) #saving the positions of every particle of each processor in the time loop, will merge the info at the end
+XY_master_saved = np.zeros((Nt, Num_Particules_end, 2)) #use at the end when merging the info
+XY_local_saved = np.zeros((Nt, Num_Particules_end, 2)) #saving the positions of every particle of each processor in the time loop, will merge the info at the end
 XY_local_saved[0,:,:] = XY_local.copy()
 
 
 # Boolean value that will keep track of if i have already sent a particule to another proc so 
 # that it doesnt resend it, will be reset to false when the particule leaves the proc t enable rollback
-Local_sent = np.zeros((Num_Particules,8), dtype = bool) #[:,0] : right; [:,1]: left; [:,2]: up; [:,3]: down [:,4] : up right; [:,5]: down right; [:,6]: down left; [:,7]: up left
+Local_sent = np.zeros((Num_Particules_end,8), dtype = bool) #[:,0] : right; [:,1]: left; [:,2]: up; [:,3]: down [:,4] : up right; [:,5]: down right; [:,6]: down left; [:,7]: up left
 
 #time loop to update the map
 for t in range(1, Nt+ 1):
-    #case where the particule is inside the local area ot the ghost    
+      #while particles are getting added, add a certain number of particles
+    if t*dt <= T_add_particles:
+        Added_par[Num_Particules : (Num_Particules + Num_particules_dt )] = True
+        Num_Particules = Num_Particules + Num_particules_dt
+        
+    #update the transparent particules 
     Particle_info_right = [] #list of particles to send to the right 
     Particle_info_left = [] #list of particles to send to the left
     Particle_info_up = [] # to up
@@ -225,27 +240,28 @@ for t in range(1, Nt+ 1):
     Particle_info_up_right = [] #upright
     Particle_info_down_right = []#downright
     Particle_info_down_left = []#downleft
-    Particle_info_up_left = []#upleft
+    Particle_info_up_left = []#upleft 
+    
     if len(Index_par_local) > 0 or len(Index_par_ghost_left) > 0 or len(Index_par_ghost_right) > 0 or len(Index_par_ghost_down) > 0 or len(Index_par_ghost_up) > 0 or len(Index_par_ghost_up_right) > 0 or len(Index_par_ghost_down_right) > 0 or len(Index_par_ghost_down_left) > 0 or len(Index_par_ghost_up_left) :
         #there is one particule inside the whole processor realm so we update their position; if no particule in the area it should return 00
         XY_local = XY_local_update #initializing the old value 
-        XY_local_update = XY_local + Vp_local #new value = old + distance in one frame
+        XY_local_update = XY_local + Vp_local * Added_par[:,None] #new value = old + distance in one frame
         XY_ghost_left = XY_ghost_left_update
-        XY_ghost_left_update = XY_ghost_left + Vp_ghost_left
+        XY_ghost_left_update = XY_ghost_left + Vp_ghost_left * Added_par[:,None]
         XY_ghost_right = XY_ghost_right_update
-        XY_ghost_right_update = XY_ghost_right + Vp_ghost_right
+        XY_ghost_right_update = XY_ghost_right + Vp_ghost_right * Added_par[:,None]
         XY_ghost_up = XY_ghost_up_update
-        XY_ghost_up_update = XY_ghost_up + Vp_ghost_up
+        XY_ghost_up_update = XY_ghost_up + Vp_ghost_up * Added_par[:,None]
         XY_ghost_down = XY_ghost_down_update
-        XY_ghost_down_update = XY_ghost_down + Vp_ghost_down
+        XY_ghost_down_update = XY_ghost_down + Vp_ghost_down * Added_par[:,None]
         XY_ghost_up_right = XY_ghost_up_right_update
-        XY_ghost_up_right_update = XY_ghost_up_right + Vp_ghost_up_right
+        XY_ghost_up_right_update = XY_ghost_up_right + Vp_ghost_up_right * Added_par[:,None]
         XY_ghost_down_right = XY_ghost_down_right_update
-        XY_ghost_down_right_update = XY_ghost_down_right + Vp_ghost_down_right
+        XY_ghost_down_right_update = XY_ghost_down_right + Vp_ghost_down_right * Added_par[:,None]
         XY_ghost_down_left = XY_ghost_down_left_update
-        XY_ghost_down_left_update = XY_ghost_down_left + Vp_ghost_down_left
+        XY_ghost_down_left_update = XY_ghost_down_left + Vp_ghost_down_left * Added_par[:,None]
         XY_ghost_up_left = XY_ghost_up_left_update
-        XY_ghost_up_left_update = XY_ghost_up_left + Vp_ghost_up_left 
+        XY_ghost_up_left_update = XY_ghost_up_left + Vp_ghost_up_left * Added_par[:,None]
         
         #now we have dealt with the transition from local to the ghosts, 
         # we have to deal with inter ghost and leaving interactions, for each ghost, there are 4 interactions possible.    
