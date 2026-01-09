@@ -4,6 +4,13 @@ import numpy as np #np calculation
 import matplotlib.pyplot as plt #plotting
 import time
 from matplotlib.animation import FuncAnimation, FFMpegWriter #animation
+from scipy.spatial import cKDTree #spatial tree to do a broad search
+
+#functions to deal with collisions
+#1 the first function is the broad phase
+
+#2 the second function is the narrow phase
+#3 the third function is the update
 
 
 #mpi init the domain of mpi - DO NOT TOUCH
@@ -30,33 +37,35 @@ up_left = cart.Get_cart_rank([coordinates_x - 1, coordinates_y + 1])
 plt.clf() 
 
 #time - TO SET
-T = 10 # seconds to change
-T_add_particles = 4 #time for which I add particles for 
+T = 10 # seconds to change - HERE
+T_add_particles = 4 #time for which I add particles for - HERE
 dt = 0.05 #delta t 
-
-Nt = int(T/ dt) #num of Iterations
-
 # save animation as a GIF? - To SET 
 save_gif_animation = True 
-
 #Mesh - TO SET
-L_total = np.array([20, 20]) #Total Size in microm
-#DO NOT TOUCH
+L_total = np.array([20, 20]) #Total Size in microm - HERE
+#Particles - TO SET
+Num_Particules = 1 #particles to start - HERE
+Num_Particules_dt = 1 #particls added per second - HERE
+Radius_particles = 10**(-2)#diameter of the particule
+Highest_velocity = 1.3 #velocity of the particle
+Lowest_velocity = -1.3
+
+
+#do not change init var
+Nt = int(T/ dt) #num of Iterations
 Lx, Ly = L_total
 Px, Py = dimensions_proc #neded to set the lines later 
-
-#Particles - TO SET
-Num_Particules = 100 #particles to start 
-Num_particules_dt = 3 #particles added per dt
 #total number of particles by the end to create the right arrays and not resize(costly) - DO NOT TOUCH
-Num_Particules_end = int(Num_Particules +  Num_particules_dt * (T_add_particles/ dt))
+Num_Particules_end = int(Num_Particules +  Num_Particules_dt * (T_add_particles /dt))
+
 #particules init - DO NOT TOUCH
-if rank == 1: #do not overload proc 0, need the if so that the rand doesnt run for each proc 
+if rank == 1 : #do not overload proc 0, need the if so that the rand doesnt run for each proc 
     #velocity rand
     Vp = np.zeros((Num_Particules_end,2))
-    Vp[:, 0] = np.random.uniform(low = -1.3, high = 1.3, size = Num_Particules_end)
-    Vp[:Num_Particules, 1] = np.random.uniform(low = -1.3, high = 1.3, size = Num_Particules)
-    Vp[Num_Particules:Num_Particules_end, 1] = np.random.uniform(low = 0, high = 1.3, size = Num_Particules_end - Num_Particules)
+    Vp[:, 0] = np.random.uniform(low = Lowest_velocity, high = Highest_velocity, size = Num_Particules_end)
+    Vp[:Num_Particules, 1] = np.random.uniform(low = Lowest_velocity, high = Highest_velocity, size = Num_Particules)
+    Vp[Num_Particules:Num_Particules_end, 1] = np.random.uniform(low = 0, high = Highest_velocity, size = Num_Particules_end - Num_Particules)
     #position rand - position after to ensure that the position the particules can be on arent in the 0 to buffer are where it would not be able to be sent periodically 
     XY_start = np.zeros((Num_Particules_end,2)) #particule start position 
     XY_start[:, 0] = np.random.uniform(low = (0 + np.max(np.abs(Vp[:,0]))) , high = (L_total[0] - np.max(np.abs(Vp[:,0]))), size = Num_Particules_end) #rand the position
@@ -64,8 +73,7 @@ if rank == 1: #do not overload proc 0, need the if so that the rand doesnt run f
     XY_start[Num_Particules:Num_Particules_end, 1] = -0.01
     #register the transparent particles: the ones that are not displayed yet
     Added_par = np.zeros((Num_Particules_end), dtype = bool) 
-    Added_par[:Num_Particules] = True
-    
+    Added_par[:Num_Particules] = True   
 else: 
     XY_start = None
     Vp = None
@@ -74,6 +82,7 @@ else:
 XY_start = cart.bcast(XY_start, root = 1)
 Vp = cart.bcast(Vp, root = 1)
 Added_par = cart.bcast(Added_par, root = 1)
+
 
 #Local MESH - DO NOT TOUCH
 #Local_width = np.array([L_total[0]/ size , L_total[1]]) # Width of 1 area and height
@@ -229,8 +238,9 @@ Local_sent = np.zeros((Num_Particules_end,8), dtype = bool) #[:,0] : right; [:,1
 for t in range(1, Nt+ 1):
       #while particles are getting added, add a certain number of particles
     if t*dt <= T_add_particles:
-        Added_par[Num_Particules : (Num_Particules + Num_particules_dt )] = True
-        Num_Particules = Num_Particules + Num_particules_dt
+        Added_par[Num_Particules : (Num_Particules + Num_Particules_dt )] = True
+        Num_Particules = Num_Particules + Num_Particules_dt
+    
         
     #update the transparent particules 
     Particle_info_right = [] #list of particles to send to the right 
