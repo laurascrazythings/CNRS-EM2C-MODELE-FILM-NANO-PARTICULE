@@ -9,8 +9,94 @@ from scipy.spatial import cKDTree #spatial tree to do a broad search
 #functions to deal with collisions
 #1 the first function is the broad phase
 
+#functions to detect and solve collisions
+
+def broad_detect(XY, d):
+
+    """ Detect potential collision to prevent from testing every single pair using a KD-Tree for now
+
+    Args:
+        XY (array): Array of particle XY positions.
+        d (float): superior to the Highest distance in one dt 
+
+    Returns:
+        array: Pairs of indices representing potential colliding particles. """
+
+    tree = cKDTree(XY)  # Build a KD-Tree from particle positions
+    pairs = tree.query_pairs(d)  # Find all pairs of particles within distance d
+    
+    return np.array(list(pairs),dtype = int)
+
 #2 the second function is the narrow phase
+def narrow_detect(Particle_test_pair, dt_left):
+    """
+    Test the collision of pairs of particles 
+    
+    Args:
+        Particle_test_pair : array of the pair of particles collding 
+    Returns:
+        array: Pairs of colliding particle if they collide
+        float: time of collision
+    """
+    v = Vp_local[Particle_test_pair[0], :] - Vp_local[Particle_test_pair[1], :] #velocity difference
+    dif_pos = XY_local[Particle_test_pair[0], :] - XY_local[Particle_test_pair[1], :] #difference in position
+    distance_collsion = 2 * Radius_particle #distance underwhich there is a collision, maybe to update later to enable different sizes of particles
+    
+    a = v @ v #the dot product will be positive if the direction is similar, if opposite it will be close to 0 or negative, meaning that whatever they do they wont cross
+    if a < 1e-12:
+        return None, None
+    
+    b = 2*(dif_pos @ v)
+    c = (dif_pos @ dif_pos) - distance_collsion * distance_collsion
+    
+    if c < 0:
+        return Particle_test_pair, -1 #return -1 to tell that the collision happened before
+    
+    if (dif_pos @ v) >= 0:
+        return None, None
+    #solving for the time of impact can be transformed into a quadratic equation solving for time
+    #discriminant
+    disc = b * b -(4 * a * c)
+    #if inferior to 0 then no physical solution
+    if disc <= 0.0:
+        return None, None
+    #the first time of impact is 
+    t_hit = (-b -np.sqrt(disc)) / (2 * a)
+    if 0.0 <= t_hit <= dt_left:
+        return Particle_test_pair, t_hit
+    else:
+        return None, None
+    
 #3 the third function is the update
+def update_particles(XY_local, XY_local_update, Vp_local, Colliding_pair, t_collision):
+    """
+    update the particle velocity and its position at contact
+    Args:
+        Colliding_pair
+        t_collision
+        XY_local
+        XY_local_update
+        Vp_local
+        
+    Returns:
+        XY_local
+        Vp_local
+    """
+    #update the position of the colliding particles
+    XY_local_update = XY_local + Vp_local * t_collision
+    XY_local_update[Colliding_pair[0] , :] = XY_local[Colliding_pair[0] , :] + Vp_local[Colliding_pair[0], :] * t_collision
+    XY_local_update[Colliding_pair[1] , :] = XY_local[Colliding_pair[1] , :] + Vp_local[Colliding_pair[1], :] * t_collision
+    
+    #Update the velocities of the particles
+    distance_particles = XY_local_update[Colliding_pair[0] , :] - XY_local_update[Colliding_pair[1] , :] #distance vector of the particles
+    dv = Vp_local[Colliding_pair[0], :] - Vp_local[Colliding_pair[1], :] #relative speed
+    projected_distance = distance_particles @ distance_particles #||C1 - C2 ||^2
+    if projected_distance > 1e-12:
+        Vp_local[Colliding_pair[0], :] = Vp_local[Colliding_pair[0], :] - ((dv @ distance_particles) / projected_distance) * distance_particles
+        Vp_local[Colliding_pair[1], :] = Vp_local[Colliding_pair[1], :] + ((dv @ distance_particles) / projected_distance) * distance_particles
+    return XY_local_update, Vp_local
+
+
 
 
 #mpi init the domain of mpi - DO NOT TOUCH
@@ -37,17 +123,17 @@ up_left = cart.Get_cart_rank([coordinates_x - 1, coordinates_y + 1])
 plt.clf() 
 
 #time - TO SET
-T = 10 # seconds to change - HERE
+T = 20 # seconds to change - HERE
 T_add_particles = 4 #time for which I add particles for - HERE
 dt = 0.05 #delta t 
 # save animation as a GIF? - To SET 
 save_gif_animation = True 
 #Mesh - TO SET
-L_total = np.array([20, 20]) #Total Size in microm - HERE
+L_total = np.array([100, 100]) #Total Size in microm - HERE
 #Particles - TO SET
-Num_Particules = 1 #particles to start - HERE
+Num_Particules = 100 #particles to start - HERE
 Num_Particules_dt = 1 #particls added per second - HERE
-Radius_particles = 10**(-2)#diameter of the particule
+Radius_particle = 10**(-2)#diameter of the particule
 Highest_velocity = 1.3 #velocity of the particle
 Lowest_velocity = -1.3
 
@@ -68,6 +154,16 @@ if rank == 1 : #do not overload proc 0, need the if so that the rand doesnt run 
     Vp[Num_Particules:Num_Particules_end, 1] = np.random.uniform(low = 0, high = Highest_velocity, size = Num_Particules_end - Num_Particules)
     #position rand - position after to ensure that the position the particules can be on arent in the 0 to buffer are where it would not be able to be sent periodically 
     XY_start = np.zeros((Num_Particules_end,2)) #particule start position 
+    #the particle cannot touch at init, would break the code 
+    num_X = int(L_total[0] /(2 * Radius_particle)) 
+    num_Y = int(L_total[1] / (2 * Radius_particle))
+    X_possible = np.arange(1, num_X )
+    Y_possible = np.arange(1, num_Y )
+    X, Y = np.meshgrid(X_possible, Y_possible)
+    grid = (np.stack((Y , X), axis = -1 ) * 2* Radius_particle) - Radius_particle 
+    #here the X and Y are reversed because when creating a mesh it is doing row column so YX so I am reshifting it
+    #Making pairs of position indexes to pull from
+    chosen = grid[np.random.choice(len(grid), size = Num_Particules, replace = False)]
     XY_start[:, 0] = np.random.uniform(low = (0 + np.max(np.abs(Vp[:,0]))) , high = (L_total[0] - np.max(np.abs(Vp[:,0]))), size = Num_Particules_end) #rand the position
     XY_start[:Num_Particules, 1] = np.random.uniform(low = (0 + np.max(np.abs(Vp[:,1]))), high = (L_total[1] - np.max(np.abs(Vp[:,1]))), size = Num_Particules)
     XY_start[Num_Particules:Num_Particules_end, 1] = -0.01
@@ -1025,8 +1121,11 @@ if rank == 0:
     ax.set_xlabel("x (µm)")
     ax.set_ylabel("y (µm)")
     
+    colors = np.empty(Num_Particules_end, dtype = object)
+    colors[:Num_Particules] = "blue"
+    colors[Num_Particules:Num_Particules_end] = "orange"
     #num particules - start with empty data
-    scat = ax.scatter( np.zeros( Num_Particules), np.zeros( Num_Particules), s=50)
+    scat = ax.scatter(np.zeros( Num_Particules_end), np.zeros( Num_Particules_end), s=50, c = colors)
     #define the title before
     title = ax.set_title("Particle animation")
     

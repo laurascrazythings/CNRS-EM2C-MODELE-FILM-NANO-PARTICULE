@@ -44,7 +44,7 @@ def narrow_detect(Particle_test_pair, dt_left):
     b = 2*(dif_pos @ v)
     c = (dif_pos @ dif_pos) - distance_collsion * distance_collsion
     
-    if c <= 0:
+    if c < 0:
         return Particle_test_pair, -1 #return -1 to tell that the collision happened before
     
     if (dif_pos @ v) >= 0:
@@ -94,13 +94,13 @@ T  = 20
 dt = 0.05
 L_total = np.array((50,50))
 Nt = int(T/dt)
-Num_particle = 7
+Num_particle = 9
 XY_local = np.zeros((Num_particle,2))
-XY_local[:, 0] = 1, 13, 49, 25.005, 5, 7.51, 9.02
-XY_local[:, 1] = 1, 37, 1, 35, 45, 45,45
+XY_local[:, 0] = 1, 13, 49, 25.005, 6.0, 7.5, 9.0, 40, 40
+XY_local[:, 1] = 1, 37, 1, 35, 45, 45, 45, 2, 10
 Vp_local = np.zeros((Num_particle,2))
-Vp_local[:, 0] = 2, 1, -2, 0.0, 1, 0, 0
-Vp_local[:, 1] = 2, -1, 2, 0.0, 0, 0, 0
+Vp_local[:, 0] = 2, 1, -2, 0.0, 1, 0, 0, 0, 0
+Vp_local[:, 1] = 2, -1, 2, 0.0, 0, 0, 0, 0, -3
 XY_local_update = XY_local.copy()
 XY_local_saved = np.zeros((Nt, Num_particle, 2))
 XY_local_saved[0,:,:] = XY_local.copy()
@@ -129,8 +129,6 @@ for t in range( 1, Nt):
                 XY_local = XY_local_update.copy()
                 #Here I have the positions after the first hit
                 dt_left = dt_left - t_collision
-                print(Vp_local)
-                print(XY_local_update)
             else:
                 XY_local_update = XY_local + Vp_local * dt_left
                 dt_left = 0
@@ -155,7 +153,7 @@ ax.set_ylabel("y (µm)")
 N = XY_local_saved.shape[1]
 
 # Example: fixed colors for each particle (2 particles here)
-colors = np.array(["red", "blue", "green", "pink", "orange", "yellow", "brown"])   # length N
+colors = np.array(["red", "blue", "green", "pink", "orange", "yellow", "brown", "black", "purple"])   # length N
 
 scat = ax.scatter(
     XY_local_saved[0, :, 0], XY_local_saved[0, :, 1],
