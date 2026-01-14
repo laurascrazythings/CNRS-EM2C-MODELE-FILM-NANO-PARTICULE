@@ -99,15 +99,14 @@ XY_local = np.zeros((Num_particle,2))
 XY_local[:, 0] = 1, 13, 49, 25.005, 6.0, 7.5, 9.0, 40, 40
 XY_local[:, 1] = 1, 37, 1, 35, 45, 45, 45, 2, 10
 Vp_local = np.zeros((Num_particle,2))
-Vp_local[:, 0] = 2, 1, -2, 0.0, 1, 0, 0, 0, 0
-Vp_local[:, 1] = 2, -1, 2, 0.0, 0, 0, 0, 0, -3
+Vp_local[:, 0] = 2, 1, -2, 0, 1, 0, 0, 0, 0
+Vp_local[:, 1] = 2, -1, 2, 0, 0, 0, 0, 0, -3
 XY_local_update = XY_local.copy()
 XY_local_saved = np.zeros((Nt, Num_particle, 2))
 XY_local_saved[0,:,:] = XY_local.copy()
 Radius_particle = 0.75
 
 for t in range( 1, Nt):
-    
     XY_local = XY_local_update.copy()
     dt_left = dt
     while dt_left > 0:

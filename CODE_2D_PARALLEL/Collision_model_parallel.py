@@ -132,8 +132,8 @@ save_gif_animation = True
 L_total = np.array([100, 100]) #Total Size in microm - HERE
 #Particles - TO SET
 Num_Particules = 100 #particles to start - HERE
-Num_Particules_dt = 1 #particls added per second - HERE
-Radius_particle = 10**(-2)#diameter of the particule
+Num_Particules_dt = 0 #particls added per second - HERE
+Radius_particle = 0.75 #diameter of the particule
 Highest_velocity = 1.3 #velocity of the particle
 Lowest_velocity = -1.3
 
@@ -148,25 +148,40 @@ Num_Particules_end = int(Num_Particules +  Num_Particules_dt * (T_add_particles 
 #particules init - DO NOT TOUCH
 if rank == 1 : #do not overload proc 0, need the if so that the rand doesnt run for each proc 
     #velocity rand
-    Vp = np.zeros((Num_Particules_end,2))
-    Vp[:, 0] = np.random.uniform(low = Lowest_velocity, high = Highest_velocity, size = Num_Particules_end)
-    Vp[:Num_Particules, 1] = np.random.uniform(low = Lowest_velocity, high = Highest_velocity, size = Num_Particules)
-    Vp[Num_Particules:Num_Particules_end, 1] = np.random.uniform(low = 0, high = Highest_velocity, size = Num_Particules_end - Num_Particules)
+    Vp = np.zeros((Num_Particules_end,2)) #init the velocity
+    Vp[:, 0] = np.random.uniform(low = Lowest_velocity, high = Highest_velocity, size = Num_Particules_end) # random x velocity, as the particles enter in the y direction , the whole set is random
+    Vp[:Num_Particules, 1] = np.random.uniform(low = Lowest_velocity, high = Highest_velocity, size = Num_Particules)#the particle that start are random in y
+    Vp[Num_Particules: Num_Particules_end, 1] = np.random.uniform(low = 0, high = Highest_velocity, size = Num_Particules_end - Num_Particules) #the particle that are added have a y direction that goes in the domain
     #position rand - position after to ensure that the position the particules can be on arent in the 0 to buffer are where it would not be able to be sent periodically 
     XY_start = np.zeros((Num_Particules_end,2)) #particule start position 
-    #the particle cannot touch at init, would break the code 
-    num_X = int(L_total[0] /(2 * Radius_particle)) 
+    #the particle cannot touch at init, would break the code fro collision, they wouldnt collide basically
+    
+    #The particle can't start in the last bufferzone. it wont be able to be updated, there is only border control no spawn control taking into account the perodical condition
+    Buffer_zone_width = np.array([np.max(np.abs(Vp[:,0])) * dt * 2.01, np.max(np.abs(Vp[:,1])) * dt * 2.01]) #Buffer depends on the velocity of the particule, more than 2 to ensure that a particule pings twice 
+    Starting_X = round((Buffer_zone_width[0] + Radius_particle)/ (2 * Radius_particle )) #starting possible position
+    Starting_Y = round((Buffer_zone_width[1] + Radius_particle)/ (2 * Radius_particle))
+    num_X = int(L_total[0] / (2 * Radius_particle)) #number of position possible
     num_Y = int(L_total[1] / (2 * Radius_particle))
-    X_possible = np.arange(1, num_X )
-    Y_possible = np.arange(1, num_Y )
+    add_num_Y = int(Buffer_zone_width[1] / (2 * Radius_particle))#same but in the buffer
+    X_possible = np.arange(Starting_X, num_X - Starting_X ) 
+    Y_possible = np.arange(Starting_Y, num_Y - Starting_Y)
+    Add_Y_possible = np.arange(-add_num_Y, -1)
     X, Y = np.meshgrid(X_possible, Y_possible)
-    grid = (np.stack((Y , X), axis = -1 ) * 2* Radius_particle) - Radius_particle 
-    #here the X and Y are reversed because when creating a mesh it is doing row column so YX so I am reshifting it
-    #Making pairs of position indexes to pull from
-    chosen = grid[np.random.choice(len(grid), size = Num_Particules, replace = False)]
-    XY_start[:, 0] = np.random.uniform(low = (0 + np.max(np.abs(Vp[:,0]))) , high = (L_total[0] - np.max(np.abs(Vp[:,0]))), size = Num_Particules_end) #rand the position
-    XY_start[:Num_Particules, 1] = np.random.uniform(low = (0 + np.max(np.abs(Vp[:,1]))), high = (L_total[1] - np.max(np.abs(Vp[:,1]))), size = Num_Particules)
-    XY_start[Num_Particules:Num_Particules_end, 1] = -0.01
+    X_add, Y_add = np.meshgrid(X_possible, Add_Y_possible)
+    possible_position = (np.stack((X, Y), axis = -1 ) * 2* Radius_particle - Radius_particle).reshape(-1, 2)
+    additional_position = (np.stack((X_add, Y_add), axis = -1 )* 2 * Radius_particle - Radius_particle).reshape(-1, 2)
+    #for the particles being added through the simulation time, we are going to initiate them at the same tie thant the others for better run time
+    #they are going to be stocked where they spawn (at the bottom for now but can easily be changed)
+    
+    
+    # #here the X and Y are reversed because when creating a mesh it is doing row column so YX so I am reshifting it
+    # #Making pairs of position indexes to pull from
+    XY_start[:Num_Particules,:] = possible_position[np.random.choice(len(possible_position), size = Num_Particules, replace = False)]
+    XY_start[Num_Particules:Num_Particules_end, :] = additional_position[np.random.choice(len(additional_position), size = Num_Particules_end - Num_Particules, replace = False)]
+
+    #XY_start[:, 0] = np.random.uniform(low = (0 + np.max(np.abs(Vp[:,0]))) , high = (L_total[0] - np.max(np.abs(Vp[:,0]))), size = Num_Particules_end) #rand the position
+    #XY_start[:Num_Particules, 1] = np.random.uniform(low = (0 + np.max(np.abs(Vp[:,1]))), high = (L_total[1] - np.max(np.abs(Vp[:,1]))), size = Num_Particules)
+    #XY_start[Num_Particules:Num_Particules_end, 1] = -0.01
     #register the transparent particles: the ones that are not displayed yet
     Added_par = np.zeros((Num_Particules_end), dtype = bool) 
     Added_par[:Num_Particules] = True   
@@ -181,7 +196,6 @@ Added_par = cart.bcast(Added_par, root = 1)
 
 
 #Local MESH - DO NOT TOUCH
-#Local_width = np.array([L_total[0]/ size , L_total[1]]) # Width of 1 area and height
 Buffer_zone_width = np.array([np.max(np.abs(Vp[:,0])) * dt * 2.01, np.max(np.abs(Vp[:,1])) * dt * 2.01]) #Buffer depends on the velocity of the particule, more than 2 to ensure that a particule pings twice 
 
 #Each Proc - DO NOT TOUCH
@@ -261,47 +275,47 @@ for p in range(Num_Particules_end):
         Index_par_local.append(p) #know whch particule I have, helps not printing the same particle twice
         Index_par_local_set.add(p)
         XY_local[p, :]= XY_start[p, :]
-        Vp_local[p, :]= Vp[p, :] * dt #movment during one dt ( = distance in one dt)
+        Vp_local[p, :]= Vp[p, :] #movment 
     elif Local_ghost_left <= Position_x < Local_left and Local_down <= Position_y < Local_up: #particule in the left ghost
         Index_par_ghost_left.append(p)
         Index_par_ghost_left_set.add(p)
         XY_ghost_left[p, :] = XY_start[p, :]
-        Vp_ghost_left[p, :] = Vp[p, :] * dt #movment during one dt ( = distance in one dt)
+        Vp_ghost_left[p, :] = Vp[p, :] #movment 
     elif Local_right <= Position_x <= Local_ghost_right and Local_down <= Position_y < Local_up: #particule in the right ghost
         Index_par_ghost_right.append(p)
         Index_par_ghost_right_set.add(p)
         XY_ghost_right[p, :] = XY_start[p, :]
-        Vp_ghost_right[p, :] = Vp[p, :] * dt #movment during one dt ( = distance in one dt)
+        Vp_ghost_right[p, :] = Vp[p, :] #movment 
     elif Local_left <= Position_x < Local_right and Local_up <= Position_y <= Local_ghost_up: #up ghost 
         Index_par_ghost_up.append(p)
         Index_par_ghost_up_set.add(p)
         XY_ghost_up[p, :] = XY_start[p, :]
-        Vp_ghost_up[p, :] = Vp[p, :] * dt #movment during one dt ( = distance in one dt)
+        Vp_ghost_up[p, :] = Vp[p, :] #movment 
     elif Local_left <= Position_x < Local_right and Local_ghost_down <= Position_y < Local_down: #down ghost 
         Index_par_ghost_down.append(p)
         Index_par_ghost_down_set.add(p)
         XY_ghost_down[p, :] = XY_start[p, :]
-        Vp_ghost_down[p, :] = Vp[p, :] * dt #movment during one dt ( = distance in one dt)
+        Vp_ghost_down[p, :] = Vp[p, :] #movment 
     elif Local_right <= Position_x <= Local_ghost_right and Local_up <= Position_y <= Local_ghost_up : #corners up right ghost
         Index_par_ghost_up_right.append(p)
         Index_par_ghost_up_right_set.add(p)
         XY_ghost_up_right[p, :] = XY_start[p, :]
-        Vp_ghost_up_right[p, :] = Vp[p, :] * dt #movment during one dt ( = distance in one dt)
+        Vp_ghost_up_right[p, :] = Vp[p, :] #movment 
     elif Local_right <= Position_x <= Local_ghost_right and Local_ghost_down <= Position_y < Local_down : #corners down right ghost
         Index_par_ghost_down_right.append(p)
         Index_par_ghost_down_right_set.add(p)
         XY_ghost_down_right[p, :] = XY_start[p, :]
-        Vp_ghost_down_right[p, :] = Vp[p, :] * dt #movment during one dt ( = distance in one dt)
+        Vp_ghost_down_right[p, :] = Vp[p, :] #movment 
     elif Local_ghost_left <= Position_x < Local_left and Local_ghost_down <= Position_y < Local_down : #corners down left ghost
         Index_par_ghost_down_left.append(p)
         Index_par_ghost_down_left_set.add(p)
         XY_ghost_down_left[p, :] = XY_start[p, :]
-        Vp_ghost_down_left[p, :] = Vp[p, :] * dt #movment during one dt ( = distance in one dt)
+        Vp_ghost_down_left[p, :] = Vp[p, :] #movment 
     elif Local_ghost_left <= Position_x < Local_left and Local_up <= Position_y <= Local_ghost_up : #corners up left ghost
         Index_par_ghost_up_left.append(p)
         Index_par_ghost_up_left_set.add(p)
         XY_ghost_up_left[p, :] = XY_start[p, :]
-        Vp_ghost_up_left[p, :] = Vp[p, :] * dt #movment during one dt ( = distance in one dt)
+        Vp_ghost_up_left[p, :] = Vp[p, :]#movment
     #because of the periodical condition, the ghosts of the borders is actually on the other side, it can cause some distubances in the t =0 because the particle dont fall into any categories    
         
 
@@ -350,24 +364,51 @@ for t in range(1, Nt+ 1):
     
     if len(Index_par_local) > 0 or len(Index_par_ghost_left) > 0 or len(Index_par_ghost_right) > 0 or len(Index_par_ghost_down) > 0 or len(Index_par_ghost_up) > 0 or len(Index_par_ghost_up_right) > 0 or len(Index_par_ghost_down_right) > 0 or len(Index_par_ghost_down_left) > 0 or len(Index_par_ghost_up_left) :
         #there is one particule inside the whole processor realm so we update their position; if no particule in the area it should return 00
-        XY_local = XY_local_update #initializing the old value 
-        XY_local_update = XY_local + Vp_local * Added_par[:,None] #new value = old + distance in one frame
+        #I want to apply collisions but for now the different position arrays are different, later we would need to combine them in a 3d array
+        XY_local = XY_local_update.copy() #initializing the old value
+        dt_left = dt # set the dt left to the initial value before resolving collisions
+        while dt_left > 0 :
+            d = np.max(abs(Vp_local))* dt_left * 2 + 2 * Radius_particle # 2* the distance the quickest particle can cover in 1dt
+            Particle_test = broad_detect(XY_local, d) #gets the short list of nearby particles
+            if len(Particle_test) > 0:
+                Colliding_pairs = []
+                t_collisions = []
+                for j in range(len(Particle_test)):
+                    Particle_colliding, t_hit = narrow_detect(Particle_test[j,:], dt_left)
+                    if t_hit is not None and t_hit >= 0.0 :
+                        Colliding_pairs.append(Particle_colliding)
+                        t_collisions.append(t_hit)
+                if Colliding_pairs != []:
+                    idx = np.argmin(t_collisions)
+                    First_collision = Colliding_pairs[idx]#first colliding pair
+                    t_collision = t_collisions[idx] #time fo first collision
+                    XY_local_update, Vp_local = update_particles(XY_local, XY_local_update, Vp_local, First_collision, t_collision)
+                    XY_local = XY_local_update.copy()
+                    #Here I have the positions after the first hit
+                    dt_left = dt_left - t_collision
+                else:
+                    XY_local_update = XY_local + Vp_local * dt_left * Added_par[:,None] 
+                    dt_left = 0
+            else:
+                XY_local_update = XY_local + Vp_local * dt_left * Added_par[:,None]             
+                dt_left = 0 
+        #XY_local_update = XY_local + Vp_local * Added_par[:,None] #new value = old + distance in one frame  
         XY_ghost_left = XY_ghost_left_update
-        XY_ghost_left_update = XY_ghost_left + Vp_ghost_left * Added_par[:,None]
+        XY_ghost_left_update = XY_ghost_left + Vp_ghost_left * dt * Added_par[:,None]
         XY_ghost_right = XY_ghost_right_update
-        XY_ghost_right_update = XY_ghost_right + Vp_ghost_right * Added_par[:,None]
+        XY_ghost_right_update = XY_ghost_right + Vp_ghost_right * dt * Added_par[:,None]
         XY_ghost_up = XY_ghost_up_update
-        XY_ghost_up_update = XY_ghost_up + Vp_ghost_up * Added_par[:,None]
+        XY_ghost_up_update = XY_ghost_up + Vp_ghost_up * dt * Added_par[:,None]
         XY_ghost_down = XY_ghost_down_update
-        XY_ghost_down_update = XY_ghost_down + Vp_ghost_down * Added_par[:,None]
+        XY_ghost_down_update = XY_ghost_down + Vp_ghost_down * dt * Added_par[:,None]
         XY_ghost_up_right = XY_ghost_up_right_update
-        XY_ghost_up_right_update = XY_ghost_up_right + Vp_ghost_up_right * Added_par[:,None]
+        XY_ghost_up_right_update = XY_ghost_up_right + Vp_ghost_up_right * dt * Added_par[:,None]
         XY_ghost_down_right = XY_ghost_down_right_update
-        XY_ghost_down_right_update = XY_ghost_down_right + Vp_ghost_down_right * Added_par[:,None]
+        XY_ghost_down_right_update = XY_ghost_down_right + Vp_ghost_down_right * dt * Added_par[:,None]
         XY_ghost_down_left = XY_ghost_down_left_update
-        XY_ghost_down_left_update = XY_ghost_down_left + Vp_ghost_down_left * Added_par[:,None]
+        XY_ghost_down_left_update = XY_ghost_down_left + Vp_ghost_down_left * dt * Added_par[:,None]
         XY_ghost_up_left = XY_ghost_up_left_update
-        XY_ghost_up_left_update = XY_ghost_up_left + Vp_ghost_up_left * Added_par[:,None]
+        XY_ghost_up_left_update = XY_ghost_up_left + Vp_ghost_up_left * dt * Added_par[:,None]
         
         #now we have dealt with the transition from local to the ghosts, 
         # we have to deal with inter ghost and leaving interactions, for each ghost, there are 4 interactions possible.    
