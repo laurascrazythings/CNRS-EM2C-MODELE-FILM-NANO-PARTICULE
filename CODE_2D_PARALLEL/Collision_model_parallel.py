@@ -316,6 +316,11 @@ XY_local_saved[0,:,:] = XY_proc[8,:,:].copy()
 # that it doesnt resend it, will be reset to false when the particule leaves the proc t enable rollback
 Local_sent = np.zeros((Num_Particules_end,8), dtype = bool) #[:,0] : right; [:,1]: left; [:,2]: up; [:,3]: down [:,4] : up right; [:,5]: down right; [:,6]: down left; [:,7]: up left
 
+#test stack 
+XY_stack = np.zeros(9 * Num_Particules, 2)       
+XY_stack = np.stack(XY_proc[0,:,:], XY_proc[1,:,:], XY_proc[2,:,:], XY_proc[3,:,:], XY_proc[4,:,:], XY_proc[5,:,:], XY_proc[6,:,:], XY_proc[7,:,:], XY_proc[8,:,:])
+print(XY_stack)
+
 #time loop to update the map
 for t in range(1, Nt+ 1):
     if rank == 0 and ((t * dt) % 10 ) == 0 :
@@ -337,10 +342,11 @@ for t in range(1, Nt+ 1):
     
     if len(Index_par_local) > 0 or len(Index_par_ghost_left) > 0 or len(Index_par_ghost_right) > 0 or len(Index_par_ghost_down) > 0 or len(Index_par_ghost_up) > 0 or len(Index_par_ghost_up_right) > 0 or len(Index_par_ghost_down_right) > 0 or len(Index_par_ghost_down_left) > 0 or len(Index_par_ghost_up_left) :
         #there is one particule inside the whole processor realm so we update their position; if no particule in the area it should return 00
-        XY_proc[8, :, :] = XY_proc_update[8, :, :].copy() #initializing the old value
+        XY_proc = XY_proc_update.copy() #initializing the old value
         dt_left = dt # set the dt left to the initial value before resolving collisions
+        
         while dt_left > 0 :
-            d = np.max(abs(Vp_proc[8,:,:]))* dt_left * 2 + 2 * Radius_particle # 2* the distance the quickest particle can cover in 1dt
+            d = np.max(abs(Vp_proc[:,:,:]))* dt_left * 2 + 2 * Radius_particle # 2* the distance the quickest particle can cover in 1dt
             Particle_test = broad_detect(XY_proc[8,:,:], d) #gets the short list of nearby particles
             if len(Particle_test) > 0:
                 Colliding_pairs = []
@@ -365,7 +371,7 @@ for t in range(1, Nt+ 1):
                 XY_proc_update[8,:,:] = XY_proc[8,:,:] + Vp_proc[8,:,:] * dt_left * Added_par[:,None]             
                 dt_left = 0 
         #XY_local_update = XY_local + Vp_local * Added_par[:,None] #new value = old + distance in one frame
-        XY_proc[0:7, :, :] = XY_proc_update[0:7, :, :]
+        
         XY_proc_update[0:7, :, :] = XY_proc[0:7, :, :] + Vp_proc[0:7, :, :] * dt * Added_par[None, :, None] 
         
         #now we have dealt with the transition from local to the ghosts, 

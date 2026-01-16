@@ -22,9 +22,9 @@ def somme_chiffre_entier(Entier):
     while n > 0 : #WHILE there is a number to count
         somme = somme + int(n % 10) #la somme est egale a la somme enregistree + au reste de la division euclidienne ex : 0 + 6 + 4 + 3 = 13
         n = (n - reste )/10 #ici on va enlever le chiffre de la colonne comptee et l divise par 10 pour avoir celle de la colonne d'apres ex: 346 - 6 = 340 / 10 = 34
-    
-    
+       
     return somme
+
   # 2: pour faire tourner le 2 : script qui appelle une fonction  
 n = input("n = ? ")
 somme = somme_chiffre_entier(n)
