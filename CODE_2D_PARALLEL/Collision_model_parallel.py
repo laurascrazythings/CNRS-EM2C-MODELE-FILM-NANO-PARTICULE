@@ -14,35 +14,35 @@ from scipy.spatial import cKDTree #spatial tree to do a broad search
 def broad_detect(XY, d):
 
     """ Detect potential collision to prevent from testing every single pair using a KD-Tree for now
-
     Args:
         XY (array): Array of particle XY positions.
         d (float): superior to the Highest distance in one dt 
 
     Returns:
-        array: Pairs of indices representing potential colliding particles. """
-
-    tree = cKDTree(XY)  # Build a KD-Tree from particle positions
-    pairs = tree.query_pairs(d)  # Find all pairs of particles within distance d
-    
-    return np.array(list(pairs),dtype = int)
+        array: Pairs of indices representing potential colliding particles. """   
+    mask = ~np.all(XY == 0.0, axis=1)   #mask the 0.0 positioned particles
+    idx_valid = np.flatnonzero(mask) #keeps the indexes
+    XY_non_zero = XY[mask] #position of the real particles
+    tree = cKDTree(XY_non_zero)  # Build a KD-Tree from particle positions
+    pairs = np.array(list(tree.query_pairs(d)),dtype = int) # Find all pairs of particles within distance d
+    return idx_valid[pairs]
 
 #2 the second function is the narrow phase
-def narrow_detect(Particle_test_pair, dt_left, Vp_proc, XY_proc):
+def narrow_detect(Particle_test_pair, dt_left, Vp_stack, XY_stack):
     """
     Test the collision of pairs of particles 
     
     Args:
         Particle_test_pair : array of the pair of particles collding 
         dt_left : float : dt left to the next dt
-        Vp_proc : array of size 9, Number of particles and 2 dimensions: velocity of the particle
-        XY_proc : array of size 9, Number of particles and 2 dimensions: position of the particle
+        Vp_stack : array of size 9* Number of particles and 2 dimensions: velocity of the particle
+        XY_proc : array of size 9* Number of particles and 2 dimensions: position of the particle
     Returns:
         array: Pairs of colliding particle if they collide
         float: time of collision
     """
-    v = Vp_proc[8, Particle_test_pair[0], :] - Vp_proc[8, Particle_test_pair[1], :] #velocity difference
-    dif_pos = XY_proc[8, Particle_test_pair[0], :] - XY_proc[8, Particle_test_pair[1], :] #difference in position
+    v = Vp_stack[Particle_test_pair[0], :] - Vp_stack[Particle_test_pair[1], :] #velocity difference
+    dif_pos = XY_stack[Particle_test_pair[0], :] - XY_stack[Particle_test_pair[1], :] #difference in position
     distance_collsion = 2 * Radius_particle #distance underwhich there is a collision, maybe to update later to enable different sizes of particles
     
     a = v @ v #the dot product will be positive if the direction is similar, if opposite it will be close to 0 or negative, meaning that whatever they do they wont cross
@@ -71,33 +71,31 @@ def narrow_detect(Particle_test_pair, dt_left, Vp_proc, XY_proc):
         return None, None
     
 #3 the third function is the update 
-def update_particles(XY_proc, XY_proc_update, Vp_proc, Colliding_pair, t_collision):
+def update_particles(XY_stack, Vp_stack, Colliding_pair, t_collision, Added_par):
     """
     update the particle velocity and its position at contact
     Args:
         Colliding_pair: Array of 2 particles, of 2 dimensions
         t_collision: float: time of collision
-        XY_proc: array of size 9, Number of particles and 2 dimensions: position of the particle
-        XY_proc_update: array of size 9, Number of particles and 2 dimensions: position of the particle updated
-        Vp_proc: array of size 9, Number of particles and 2 dimensions: velocity of the particle
+        XY_proc: array of size 9* Number of particles and 2 dimensions: position of the particle
+        Vp_proc: array of size 9* Number of particles and 2 dimensions: velocity of the particle
         
     Returns:
-        XY_proc_update: array of size 9, Number of particles and 2 dimensions: position of the particle updated
-        Vp_proc: array of size 9, Number of particles and 2 dimensions: velocity of the particle
+        XY_stack: array of size 9*Number of particles and 2 dimensions: position of the particle updated
+        Vp_stack: array of size 9* Number of particles and 2 dimensions: velocity of the particle
     """
     #update the position of the colliding particles
-    XY_proc_update[8, :, :] = XY_proc[8, :, :] + Vp_proc[8, :, :] * t_collision
-    XY_proc_update[8, Colliding_pair[0] , :] = XY_proc[8, Colliding_pair[0] , :] + Vp_proc[8, Colliding_pair[0], :] * t_collision
-    XY_proc_update[8, Colliding_pair[1] , :] = XY_proc[8, Colliding_pair[1] , :] + Vp_proc[8, Colliding_pair[1], :] * t_collision
-    
+    XY_stack = XY_stack+ Vp_stack * t_collision * np.tile(Added_par[:,None], (9, 1)) #update all of the particles and then later change the one which collided
+    XY_stack[Colliding_pair[0] , :] = XY_stack[Colliding_pair[0] , :] + Vp_stack[Colliding_pair[0], :] * t_collision
+    XY_stack[Colliding_pair[1] , :] = XY_stack[Colliding_pair[1] , :] + Vp_stack[Colliding_pair[1], :] * t_collision
     #Update the velocities of the particles
-    distance_particles = XY_proc_update[8, Colliding_pair[0] , :] - XY_proc_update[8, Colliding_pair[1] , :] #distance vector of the particles
-    dv = Vp_proc[8, Colliding_pair[0], :] - Vp_proc[8, Colliding_pair[1], :] #relative speed
+    distance_particles = XY_stack[Colliding_pair[0] , :] - XY_stack[Colliding_pair[1] , :] #distance vector of the particles
+    dv = Vp_stack[Colliding_pair[0], :] - Vp_stack[Colliding_pair[1], :] #relative speed
     projected_distance = distance_particles @ distance_particles #||C1 - C2 ||^2
     if projected_distance > 1e-12:
-        Vp_proc[8, Colliding_pair[0], :] = Vp_proc[8, Colliding_pair[0], :] - ((dv @ distance_particles) / projected_distance) * distance_particles
-        Vp_proc[8, Colliding_pair[1], :] = Vp_proc[8, Colliding_pair[1], :] + ((dv @ distance_particles) / projected_distance) * distance_particles
-    return XY_proc_update[8, :, :], Vp_proc[8, :, :]
+        Vp_stack[Colliding_pair[0], :] = Vp_stack[Colliding_pair[0], :] - ((dv @ distance_particles) / projected_distance) * distance_particles
+        Vp_stack[Colliding_pair[1], :] = Vp_stack[Colliding_pair[1], :] + ((dv @ distance_particles) / projected_distance) * distance_particles
+    return XY_stack, Vp_stack
 
 #SCRIPT
 
@@ -124,7 +122,7 @@ plt.clf()
 
 #USER INIT
 #time - TO SET
-T = 20 # seconds to change - HERE
+T = 5 # seconds to change - HERE
 T_add_particles = 0.5 #time for which I add particles for - HERE
 dt = 0.05 #delta t 
 # save animation as a GIF? - To SET 
@@ -132,8 +130,8 @@ save_gif_animation = True
 #Mesh - TO SET
 L_total = np.array([20, 20]) #Total Size in microm - HERE
 #Particles - TO SET
-Num_Particules = 200 #particles to start - HERE
-Num_Particules_dt= 1 #particls added per second - HERE
+Num_Particules = 2 #particles to start - HERE
+Num_Particules_dt= 0 #particls added per second - HERE
 Radius_particle = 0.01 #radius of the particule
 Highest_velocity = 1.3 #velocity of the particle
 Lowest_velocity = -1.3
@@ -151,9 +149,11 @@ Num_Particules_end = int(Num_Particules +  Num_Particules_dt * (T_add_particles 
 if rank == 1 : #do not overload proc 0, need the if so that the rand doesnt run for each proc 
     #velocity rand
     Vp = np.zeros((Num_Particules_end,2)) #init the velocity
-    Vp[:, 0] = np.random.uniform(low = Lowest_velocity, high = Highest_velocity, size = Num_Particules_end) # random x velocity, as the particles enter in the y direction , the whole set is random
-    Vp[:Num_Particules, 1] = np.random.uniform(low = Lowest_velocity, high = Highest_velocity, size = Num_Particules)#the particle that start are random in y
-    Vp[Num_Particules: Num_Particules_end, 1] = np.random.uniform(low = 0, high = Highest_velocity, size = Num_Particules_end - Num_Particules) #the particle that are added have a y direction that goes in the domain
+    # Vp[:, 0] = np.random.uniform(low = Lowest_velocity, high = Highest_velocity, size = Num_Particules_end) # random x velocity, as the particles enter in the y direction , the whole set is random
+    # Vp[:Num_Particules, 1] = np.random.uniform(low = Lowest_velocity, high = Highest_velocity, size = Num_Particules)#the particle that start are random in y
+    # Vp[Num_Particules: Num_Particules_end, 1] = np.random.uniform(low = 0, high = Highest_velocity, size = Num_Particules_end - Num_Particules) #the particle that are added have a y direction that goes in the domain
+    Vp[:, 0] = 1, -1
+    Vp[:, 1] = 0 , 0
     #position rand - position after to ensure that the position the particules can be on arent in the 0 to buffer are where it would not be able to be sent periodically 
     XY_start = np.zeros((Num_Particules_end,2)) #particule start position 
     #the particle cannot touch at init, would break the code fro collision, they wouldnt collide basically
@@ -182,9 +182,10 @@ if rank == 1 : #do not overload proc 0, need the if so that the rand doesnt run 
     
     # #here the X and Y are reversed because when creating a mesh it is doing row column so YX so I am reshifting it
     # #Making pairs of position indexes to pull from
-    XY_start[:Num_Particules,:] = possible_position[np.random.choice(len(possible_position), size = Num_Particules, replace = False)]
-    XY_start[Num_Particules:Num_Particules_end, :] = additional_position[np.random.choice(len(additional_position), size = Num_Particules_end - Num_Particules, replace = False)]
-
+    # XY_start[:Num_Particules,:] = possible_position[np.random.choice(len(possible_position), size = Num_Particules, replace = False)]
+    # XY_start[Num_Particules:Num_Particules_end, :] = additional_position[np.random.choice(len(additional_position), size = Num_Particules_end - Num_Particules, replace = False)]
+    XY_start[:,0] = 12, 8
+    XY_start[:,1] = 8, 8
     #register the transparent particles: the ones that are not displayed yet
     Added_par = np.zeros((Num_Particules_end), dtype = bool) 
     Added_par[:Num_Particules] = True   
@@ -223,6 +224,7 @@ Local_ghost_down = Local_down - Buffer_zone_width[1] #the ghost zone ends
 
 # Particule position - to change - set to empty for now- pay attention in case some particules have a 00 position and 00 velocity might not work
 XY_proc = np.zeros((9, Num_Particules_end, 2)) #creating a position array to replace the 9 different ones to deal with border collisions
+XY_proc_update = np.zeros((9, Num_Particules_end, 2))
 ##[:,0] : right; [:,1]: left; [:,2]: up; [:,3]: down [:,4] : up right; [:,5]: down right; [:,6]: down left; [:,7]: up left; [:. 8]: local
 
 # Particule speeds- set to zeros for now
@@ -304,7 +306,6 @@ for p in range(Num_Particules_end):
          
 
 #Initialisation of the Update of the local and ghost locations
-XY_proc_update = XY_proc.copy()
 
 #initiate the saving of information
 #I wonder if I should print the particles in the ghost areas as well in different colors... For now, only the local xy will be printed
@@ -316,21 +317,17 @@ XY_local_saved[0,:,:] = XY_proc[8,:,:].copy()
 # that it doesnt resend it, will be reset to false when the particule leaves the proc t enable rollback
 Local_sent = np.zeros((Num_Particules_end,8), dtype = bool) #[:,0] : right; [:,1]: left; [:,2]: up; [:,3]: down [:,4] : up right; [:,5]: down right; [:,6]: down left; [:,7]: up left
 
-#test stack 
-XY_stack = np.zeros(9 * Num_Particules, 2)       
-XY_stack = np.stack(XY_proc[0,:,:], XY_proc[1,:,:], XY_proc[2,:,:], XY_proc[3,:,:], XY_proc[4,:,:], XY_proc[5,:,:], XY_proc[6,:,:], XY_proc[7,:,:], XY_proc[8,:,:])
-print(XY_stack)
 
 #time loop to update the map
 for t in range(1, Nt+ 1):
-    if rank == 0 and ((t * dt) % 10 ) == 0 :
+    if rank == 0 and ((t * dt) % 2 ) == 0 :
         print(t*dt)
       #particles are getting added, add a certain number of particles, I have decided to do a boolean that changes value depending on the rate at which we add particle. The particle are "invisible" or at least wont move position until they are able to
+    
     if t*dt <= T_add_particles:
         Added_par[Num_Particules : (Num_Particules + Num_Particules_dt )] = True
         Num_Particules = Num_Particules + Num_Particules_dt       
-        #update the transparent particules 
-    
+        #update the transparent particules
     Particle_info_right = [] #list of particles to send to the right 
     Particle_info_left = [] #list of particles to send to the left
     Particle_info_up = [] # to up
@@ -339,20 +336,20 @@ for t in range(1, Nt+ 1):
     Particle_info_down_right = []#downright
     Particle_info_down_left = []#downleft
     Particle_info_up_left = []#upleft 
-    
     if len(Index_par_local) > 0 or len(Index_par_ghost_left) > 0 or len(Index_par_ghost_right) > 0 or len(Index_par_ghost_down) > 0 or len(Index_par_ghost_up) > 0 or len(Index_par_ghost_up_right) > 0 or len(Index_par_ghost_down_right) > 0 or len(Index_par_ghost_down_left) > 0 or len(Index_par_ghost_up_left) :
         #there is one particule inside the whole processor realm so we update their position; if no particule in the area it should return 00
         XY_proc = XY_proc_update.copy() #initializing the old value
         dt_left = dt # set the dt left to the initial value before resolving collisions
-        
+        XY_stack = XY_proc.reshape(-1, 2)# stack the position values to allow for proimity checks
+        Vp_stack = Vp_proc.reshape(-1, 2)
         while dt_left > 0 :
-            d = np.max(abs(Vp_proc[:,:,:]))* dt_left * 2 + 2 * Radius_particle # 2* the distance the quickest particle can cover in 1dt
-            Particle_test = broad_detect(XY_proc[8,:,:], d) #gets the short list of nearby particles
+            d = np.sqrt((np.max(abs(Vp_stack[:,0])))**(2) + (np.max(abs(Vp_stack[:,1])))**(2)) * dt_left * 2 + 2 * Radius_particle # 2* the distance the quickest particle can cover in 1dt
+            Particle_test = broad_detect(XY_stack, d) #gets the short list of nearby particles in the whole proc thanks to the stack
             if len(Particle_test) > 0:
                 Colliding_pairs = []
                 t_collisions = []
                 for j in range(len(Particle_test)):
-                    Particle_colliding, t_hit = narrow_detect(Particle_test[j,:], dt_left, Vp_proc, XY_proc)
+                    Particle_colliding, t_hit = narrow_detect(Particle_test[j,:], dt_left, Vp_stack, XY_stack)
                     if t_hit is not None and t_hit >= 0.0 :
                         Colliding_pairs.append(Particle_colliding)
                         t_collisions.append(t_hit)
@@ -360,20 +357,17 @@ for t in range(1, Nt+ 1):
                     idx = np.argmin(t_collisions)
                     First_collision = Colliding_pairs[idx]#first colliding pair
                     t_collision = t_collisions[idx] #time fo first collision
-                    XY_proc_update[8, :, :], Vp_proc[8, :, :] = update_particles(XY_proc, XY_proc_update, Vp_proc, First_collision, t_collision)
-                    XY_proc[8,:,:] = XY_proc_update[8,:,:].copy()
-                    #Here I have the positions after the first hit
+                    XY_stack, Vp_stack = update_particles(XY_stack, Vp_stack, First_collision, t_collision, Added_par)
                     dt_left = dt_left - t_collision
                 else:
-                    XY_proc_update[8, :, :] = XY_proc[8, :, :] + Vp_proc[8, :, :] * dt_left * Added_par[:,None] 
+                    XY_stack = XY_stack + Vp_stack * dt_left * np.tile(Added_par[:,None], (9, 1))
                     dt_left = 0
             else:
-                XY_proc_update[8,:,:] = XY_proc[8,:,:] + Vp_proc[8,:,:] * dt_left * Added_par[:,None]             
+                XY_stack = XY_stack + Vp_stack * dt_left * np.tile(Added_par[:,None], (9, 1))             
                 dt_left = 0 
-        #XY_local_update = XY_local + Vp_local * Added_par[:,None] #new value = old + distance in one frame
-        
-        XY_proc_update[0:7, :, :] = XY_proc[0:7, :, :] + Vp_proc[0:7, :, :] * dt * Added_par[None, :, None] 
-        
+              
+        XY_proc = XY_stack.reshape(9, Num_Particules_end, 2)
+        XY_proc_update = XY_proc.copy()
         #now we have dealt with the transition from local to the ghosts, 
         # we have to deal with inter ghost and leaving interactions, for each ghost, there are 4 interactions possible.
         #right ghost interactions            
@@ -760,7 +754,7 @@ for t in range(1, Nt+ 1):
             #gathering the non covering cnditions to improve run time if and elifs that dont break the code basically
             #moving right -- technically but also called when moving backward
             if (Local_right > Position_x >= (Local_right - Buffer_zone_width[0]) and (Local_down + Buffer_zone_width[1]) <= Position_y < (Local_up - Buffer_zone_width[1]) and not Local_sent[Index, 0]): #xy >= ghost left du prochain
-                #The particule entered the left ghost zone of the left processor, 
+                #The particule entered the left ghost zone of the right processor, 
                 #we send it to the right proc if we havent yet
                 Particle_info_right.append((Index, XY_proc_update[8, Index,:].copy(), Vp_proc[8, Index,:].copy())) # index, Position, velocity
                 Local_sent[Index,0] = True
@@ -966,8 +960,8 @@ for t in range(1, Nt+ 1):
     #incoming from left = ghost left
     if incoming_from_left is None: #if null
         incoming_from_left = [] #set to empty to be able to loop on it without errors
-    # elif incoming_from_left != []:
-    #      print("incoming from left: ", incoming_from_left)
+    elif incoming_from_left != []:
+        print("incoming from left: ", incoming_from_left)
     for Index, pos, vel in incoming_from_left: #for all the different particles
         #add to ghost left
         if coordinates_x == 0:
@@ -976,6 +970,7 @@ for t in range(1, Nt+ 1):
             Index_par_ghost_left.append(Index) #add the particle index
             Index_par_ghost_left_set.add(Index)
             XY_proc_update[1, Index] = pos #associate the postion
+            print(XY_proc[1, Index])
             Vp_proc[1, Index] = vel #and velocity
 
     #incoming from right = ghost right
@@ -990,7 +985,7 @@ for t in range(1, Nt+ 1):
         if Index not in Index_par_ghost_right_set:
             Index_par_ghost_right.append(Index)
             Index_par_ghost_right_set.add(Index)
-            XY_proc_update[0, Index] = pos
+            XY_proc[0, Index] = pos
             Vp_proc[0, Index] = vel
     
     #incoming from up = ghost up
@@ -1004,7 +999,7 @@ for t in range(1, Nt+ 1):
         if Index not in Index_par_ghost_up_set:
             Index_par_ghost_up.append(Index)
             Index_par_ghost_up_set.add(Index)
-            XY_proc_update[2, Index] = pos
+            XY_proc[2, Index] = pos
             Vp_proc[2,  Index] = vel
     
     #incoming from down = ghost down
@@ -1018,7 +1013,7 @@ for t in range(1, Nt+ 1):
         if Index not in Index_par_ghost_down_set:
             Index_par_ghost_down.append(Index)
             Index_par_ghost_down_set.add(Index)
-            XY_proc_update[3, Index] = pos
+            XY_proc[3, Index] = pos
             Vp_proc[3, Index] = vel
     
     #incoming from up right = ghost up right
@@ -1034,7 +1029,7 @@ for t in range(1, Nt+ 1):
         if Index not in Index_par_ghost_up_right_set:
             Index_par_ghost_up_right.append(Index)
             Index_par_ghost_up_right_set.add(Index)
-            XY_proc_update[4, Index] = pos
+            XY_proc[4, Index] = pos
             Vp_proc[4, Index] = vel
     
     #incoming from down right = ghost down right
@@ -1050,7 +1045,7 @@ for t in range(1, Nt+ 1):
         if Index not in Index_par_ghost_down_right_set:
             Index_par_ghost_down_right.append(Index)
             Index_par_ghost_down_right_set.add(Index)
-            XY_proc_update[5, Index] = pos
+            XY_proc[5, Index] = pos
             Vp_proc[5, Index] = vel
     
     #incoming from down left = ghost down left
@@ -1066,7 +1061,7 @@ for t in range(1, Nt+ 1):
         if Index not in Index_par_ghost_down_left_set:
             Index_par_ghost_down_left.append(Index)
             Index_par_ghost_down_left_set.add(Index)
-            XY_proc_update[6, Index] = pos
+            XY_proc[6, Index] = pos
             Vp_proc[6, Index] = vel
             
     #incoming from up left = ghost up left
@@ -1082,7 +1077,7 @@ for t in range(1, Nt+ 1):
         if Index not in Index_par_ghost_up_left_set:
             Index_par_ghost_up_left.append(Index)
             Index_par_ghost_up_left_set.add(Index)
-            XY_proc_update[7, Index] = pos
+            XY_proc[7, Index] = pos
             Vp_proc[7, Index] = vel
             
     XY_local_saved[t - 1, :, :] = XY_proc_update[8,:,:].copy() #save the updated values 
@@ -1143,8 +1138,10 @@ if rank == 0:
     ax.set_ylabel("y (µm)")
     
     colors = np.empty(Num_Particules_end, dtype = object)
-    colors[0:Num_Particules_start] = "black"
-    colors[Num_Particules_start:Num_Particules_end] = "red"
+    #colors[0:Num_Particules_start] = "black"
+    #colors[Num_Particules_start:Num_Particules_end] = "red"
+    colors[0] = "red"
+    colors[1] = "green"
     #num particules - start with empty data
     init_pos = XY_master_saved[0, :, :].copy()
     s = radius_to_s(ax, Radius_particle)
