@@ -84,6 +84,7 @@ def update_particles(XY_stack, Vp_stack, Colliding_pair, t_collision, Added_par)
         XY_stack: array of size 9*Number of particles and 2 dimensions: position of the particle updated
         Vp_stack: array of size 9* Number of particles and 2 dimensions: velocity of the particle
     """
+
     #update the position of the colliding particles
     XY_stack = XY_stack+ Vp_stack * t_collision * np.tile(Added_par[:,None], (9, 1)) #update all of the particles and then later change the one which collided
     XY_stack[Colliding_pair[0] , :] = XY_stack[Colliding_pair[0] , :] + Vp_stack[Colliding_pair[0], :] * t_collision
@@ -130,9 +131,9 @@ save_gif_animation = True
 #Mesh - TO SET
 L_total = np.array([20, 20]) #Total Size in microm - HERE
 #Particles - TO SET
-Num_Particules = 2 #particles to start - HERE
+Num_Particules = 2500 #particles to start - HERE
 Num_Particules_dt= 0 #particls added per second - HERE
-Radius_particle = 0.01 #radius of the particule
+Radius_particle = 0.1 #radius of the particule
 Highest_velocity = 1.3 #velocity of the particle
 Lowest_velocity = -1.3
 
@@ -149,11 +150,11 @@ Num_Particules_end = int(Num_Particules +  Num_Particules_dt * (T_add_particles 
 if rank == 1 : #do not overload proc 0, need the if so that the rand doesnt run for each proc 
     #velocity rand
     Vp = np.zeros((Num_Particules_end,2)) #init the velocity
-    # Vp[:, 0] = np.random.uniform(low = Lowest_velocity, high = Highest_velocity, size = Num_Particules_end) # random x velocity, as the particles enter in the y direction , the whole set is random
-    # Vp[:Num_Particules, 1] = np.random.uniform(low = Lowest_velocity, high = Highest_velocity, size = Num_Particules)#the particle that start are random in y
-    # Vp[Num_Particules: Num_Particules_end, 1] = np.random.uniform(low = 0, high = Highest_velocity, size = Num_Particules_end - Num_Particules) #the particle that are added have a y direction that goes in the domain
-    Vp[:, 0] = 1, -1
-    Vp[:, 1] = 0 , 0
+    Vp[:, 0] = np.random.uniform(low = Lowest_velocity, high = Highest_velocity, size = Num_Particules_end) # random x velocity, as the particles enter in the y direction , the whole set is random
+    Vp[:Num_Particules, 1] = np.random.uniform(low = Lowest_velocity, high = Highest_velocity, size = Num_Particules)#the particle that start are random in y
+    Vp[Num_Particules: Num_Particules_end, 1] = np.random.uniform(low = 0, high = Highest_velocity, size = Num_Particules_end - Num_Particules) #the particle that are added have a y direction that goes in the domain
+    # Vp[:, 0] = 1, -1
+    # Vp[:, 1] = 0 , 0
     #position rand - position after to ensure that the position the particules can be on arent in the 0 to buffer are where it would not be able to be sent periodically 
     XY_start = np.zeros((Num_Particules_end,2)) #particule start position 
     #the particle cannot touch at init, would break the code fro collision, they wouldnt collide basically
@@ -182,10 +183,10 @@ if rank == 1 : #do not overload proc 0, need the if so that the rand doesnt run 
     
     # #here the X and Y are reversed because when creating a mesh it is doing row column so YX so I am reshifting it
     # #Making pairs of position indexes to pull from
-    # XY_start[:Num_Particules,:] = possible_position[np.random.choice(len(possible_position), size = Num_Particules, replace = False)]
-    # XY_start[Num_Particules:Num_Particules_end, :] = additional_position[np.random.choice(len(additional_position), size = Num_Particules_end - Num_Particules, replace = False)]
-    XY_start[:,0] = 12, 8
-    XY_start[:,1] = 8, 8
+    XY_start[:Num_Particules,:] = possible_position[np.random.choice(len(possible_position), size = Num_Particules, replace = False)]
+    XY_start[Num_Particules:Num_Particules_end, :] = additional_position[np.random.choice(len(additional_position), size = Num_Particules_end - Num_Particules, replace = False)]
+    # XY_start[:,0] = 12, 8
+    # XY_start[:,1] = 8, 8
     #register the transparent particles: the ones that are not displayed yet
     Added_par = np.zeros((Num_Particules_end), dtype = bool) 
     Added_par[:Num_Particules] = True   
@@ -224,7 +225,6 @@ Local_ghost_down = Local_down - Buffer_zone_width[1] #the ghost zone ends
 
 # Particule position - to change - set to empty for now- pay attention in case some particules have a 00 position and 00 velocity might not work
 XY_proc = np.zeros((9, Num_Particules_end, 2)) #creating a position array to replace the 9 different ones to deal with border collisions
-XY_proc_update = np.zeros((9, Num_Particules_end, 2))
 ##[:,0] : right; [:,1]: left; [:,2]: up; [:,3]: down [:,4] : up right; [:,5]: down right; [:,6]: down left; [:,7]: up left; [:. 8]: local
 
 # Particule speeds- set to zeros for now
@@ -338,7 +338,6 @@ for t in range(1, Nt+ 1):
     Particle_info_up_left = []#upleft 
     if len(Index_par_local) > 0 or len(Index_par_ghost_left) > 0 or len(Index_par_ghost_right) > 0 or len(Index_par_ghost_down) > 0 or len(Index_par_ghost_up) > 0 or len(Index_par_ghost_up_right) > 0 or len(Index_par_ghost_down_right) > 0 or len(Index_par_ghost_down_left) > 0 or len(Index_par_ghost_up_left) :
         #there is one particule inside the whole processor realm so we update their position; if no particule in the area it should return 00
-        XY_proc = XY_proc_update.copy() #initializing the old value
         dt_left = dt # set the dt left to the initial value before resolving collisions
         XY_stack = XY_proc.reshape(-1, 2)# stack the position values to allow for proimity checks
         Vp_stack = Vp_proc.reshape(-1, 2)
@@ -367,19 +366,18 @@ for t in range(1, Nt+ 1):
                 dt_left = 0 
               
         XY_proc = XY_stack.reshape(9, Num_Particules_end, 2)
-        XY_proc_update = XY_proc.copy()
         #now we have dealt with the transition from local to the ghosts, 
         # we have to deal with inter ghost and leaving interactions, for each ghost, there are 4 interactions possible.
         #right ghost interactions            
         for par_right in reversed(range(len(Index_par_ghost_right))): #in the ghost right area
             Index = Index_par_ghost_right[par_right] #index of the particule in the ghost right area to use for the xy vp which are indexed following the grand scheme to obliviate confusion
-            Position_x = XY_proc_update[0,Index, 0]
-            Position_y = XY_proc_update[0, Index, 1]
+            Position_x = XY_proc[0,Index, 0]
+            Position_y = XY_proc[0, Index, 1]
             #4 cases for now forward or backward or up or down
             #forward right to leave
             if Position_x > Local_ghost_right:
                 #particule is leaving the ghost right area to nowhere as it is already sent to the next one
-                XY_proc_update[0, Index, :] = [0, 0] #technically, I already sent it so no send
+                XY_proc[0, Index, :] = [0, 0] #technically, I already sent it so no send
                 Vp_proc[0, Index, :] = [0, 0]
                 Index_par_ghost_right.pop(par_right) #remove the particule from the count
                 Index_par_ghost_right_set.discard(Index)
@@ -388,9 +386,9 @@ for t in range(1, Nt+ 1):
                 #the particule enters the local area and leaves the ghost right area
                 Index_par_local.append(Index) #add the index to the list
                 Index_par_local_set.add(Index)
-                XY_proc_update[8, Index, :] = XY_proc_update[0, Index, :].copy() #update the local position of the particule
+                XY_proc[8, Index, :] = XY_proc[0, Index, :].copy() #update the local position of the particule
                 Vp_proc[8, Index, :] = Vp_proc[0, Index, :].copy() #Update the local speed of the particule
-                XY_proc_update[0, Index, :] = [0, 0] #Remove the positon of the particule
+                XY_proc[0, Index, :] = [0, 0] #Remove the positon of the particule
                 Vp_proc[0, Index, :] = [0, 0] #Remove the speed of the particule 
                 Index_par_ghost_right.pop(par_right) #Index of the new particule added
                 Index_par_ghost_right_set.discard(Index)
@@ -399,9 +397,9 @@ for t in range(1, Nt+ 1):
                 #the particle enters the up right ghost
                 Index_par_ghost_up_right.append(Index) #add the particle to the list
                 Index_par_ghost_up_right_set.add(Index)
-                XY_proc_update[4, Index, :] = XY_proc_update[0, Index, :].copy() # update the local position
+                XY_proc[4, Index, :] = XY_proc[0, Index, :].copy() # update the local position
                 Vp_proc[4, Index, :] = Vp_proc[0, Index, :].copy() #Update the local speed of the particule
-                XY_proc_update[0, Index, :] = [0, 0] #Remove the positon of the particule
+                XY_proc[0, Index, :] = [0, 0] #Remove the positon of the particule
                 Vp_proc[0, Index, :] = [0, 0] #Remove the speed of the particule 
                 Index_par_ghost_right.pop(par_right) #Index of the new particule added
                 Index_par_local_set.discard(Index)
@@ -410,9 +408,9 @@ for t in range(1, Nt+ 1):
                 #the particle enters the down right ghost
                 Index_par_ghost_down_right.append(Index) #add the particle to the list
                 Index_par_ghost_down_right_set.add(Index)
-                XY_proc_update[5, Index, :] = XY_proc_update[0, Index, :].copy() # update the local position
+                XY_proc[5, Index, :] = XY_proc[0, Index, :].copy() # update the local position
                 Vp_proc[5, Index, :] = Vp_proc[0, Index, :].copy() #Update the local speed of the particule
-                XY_proc_update[0, Index, :] = [0, 0] #Remove the positon of the particule
+                XY_proc[0, Index, :] = [0, 0] #Remove the positon of the particule
                 Vp_proc[0, Index, :] = [0, 0] #Remove the speed of the particule 
                 Index_par_ghost_right.pop(par_right) #Index of the new particule added
                 Index_par_local_set.discard(Index)
@@ -420,24 +418,24 @@ for t in range(1, Nt+ 1):
         #left ghost interactions    
         for par_left in reversed(range(len(Index_par_ghost_left))):
             Index = Index_par_ghost_left[par_left] #index of the particule in the ghost right area
-            Position_x = XY_proc_update[1, Index, 0]
-            Position_y = XY_proc_update[1, Index, 1]
+            Position_x = XY_proc[1, Index, 0]
+            Position_y = XY_proc[1, Index, 1]
             #4cases in 2d
             #forward left to local 
             if Position_x >= Local_left and Local_down <= Position_y < Local_up :
                 #the particule enters the local area and leaves the ghost left area
                 Index_par_local.append(Index) #add the index to the list
                 Index_par_local_set.add(Index)
-                XY_proc_update[8, Index, :] = XY_proc_update[1, Index, :].copy() #update the local position of the particule
+                XY_proc[8, Index, :] = XY_proc[1, Index, :].copy() #update the local position of the particule
                 Vp_proc[8, Index, :] = Vp_proc[1, Index, :].copy() #Update the local speed of the particule
-                XY_proc_update[1, Index, :] = [0, 0] #Remove the positon of the particule
+                XY_proc[1, Index, :] = [0, 0] #Remove the positon of the particule
                 Vp_proc[1, Index, :] = [0, 0] #Remove the speed of the particule 
                 Index_par_ghost_left.pop(par_left) #Index of the new particule added
                 Index_par_ghost_left_set.discard(Index)
             #rollback left to leave
             elif Position_x < Local_ghost_left : 
                 #particule is leaving the ghost right area 
-                XY_proc_update[1, Index, :] = [0, 0] #technically, I already sent it so no send
+                XY_proc[1, Index, :] = [0, 0] #technically, I already sent it so no send
                 Vp_proc[1, Index, :] = [0, 0]
                 Index_par_ghost_left.pop(par_left) #remove the particule from the count
                 Index_par_ghost_left_set.discard(Index)
@@ -446,9 +444,9 @@ for t in range(1, Nt+ 1):
                 #particle enters the down left area
                 Index_par_ghost_down_left.append(Index) #add the index to the list
                 Index_par_ghost_down_left_set.add(Index)
-                XY_proc_update[6, Index, :] = XY_proc_update[1, Index, :].copy() #update the local position of the particule
+                XY_proc[6, Index, :] = XY_proc[1, Index, :].copy() #update the local position of the particule
                 Vp_proc[6, Index, :] = Vp_proc[1, Index, :].copy() #Update the local speed of the particule
-                XY_proc_update[1, Index, :] = [0, 0] #Remove the positon of the particule
+                XY_proc[1, Index, :] = [0, 0] #Remove the positon of the particule
                 Vp_proc[1, Index, :] = [0, 0] #Remove the speed of the particule 
                 Index_par_ghost_left.pop(par_left) #Index of the new particule added
                 Index_par_ghost_left_set.discard(Index)
@@ -457,9 +455,9 @@ for t in range(1, Nt+ 1):
                 #particle enters the up left area
                 Index_par_ghost_up_left.append(Index) #add the index to the list
                 Index_par_ghost_up_left_set.add(Index)
-                XY_proc_update[7, Index, :] = XY_proc_update[1, Index, :].copy() #update the local position of the particule
+                XY_proc[7, Index, :] = XY_proc[1, Index, :].copy() #update the local position of the particule
                 Vp_proc[7, Index, :] = Vp_proc[1, Index, :].copy() #Update the local speed of the particule
-                XY_proc_update[1, Index, :] = [0, 0] #Remove the positon of the particule
+                XY_proc[1, Index, :] = [0, 0] #Remove the positon of the particule
                 Vp_proc[1, Index, :] = [0, 0] #Remove the speed of the particule 
                 Index_par_ghost_left.pop(par_left) #Index of the new particule added
                 Index_par_ghost_left_set.discard(Index)
@@ -467,17 +465,17 @@ for t in range(1, Nt+ 1):
         #up ghost interactions
         for par_up in reversed(range(len(Index_par_ghost_up))):
             Index = Index_par_ghost_up[par_up] #index of the particule in the ghost up area
-            Position_x = XY_proc_update[2, Index, 0]
-            Position_y = XY_proc_update[2, Index, 1]
+            Position_x = XY_proc[2, Index, 0]
+            Position_y = XY_proc[2, Index, 1]
             #4 cases in 2d
             #forward - up to up right
             if Local_right <= Position_x <= Local_ghost_right and Local_up <= Position_y <= Local_ghost_up:
                 #enters the up right
                 Index_par_ghost_up_right.append(Index) #add the index to the list
                 Index_par_ghost_up_right_set.add(Index)
-                XY_proc_update[4, Index, :] = XY_proc_update[2, Index, :].copy() #update the local position of the particule
+                XY_proc[4, Index, :] = XY_proc[2, Index, :].copy() #update the local position of the particule
                 Vp_proc[4, Index, :] = Vp_proc[2,  Index, :].copy() #Update the local speed of the particule
-                XY_proc_update[2, Index, :] = [0, 0] #Remove the positon of the particule
+                XY_proc[2, Index, :] = [0, 0] #Remove the positon of the particule
                 Vp_proc[2,  Index, :] = [0, 0] #Remove the speed of the particule 
                 Index_par_ghost_up.pop(par_up) #Index of the new particule added
                 Index_par_ghost_up_set.discard(Index)
@@ -486,16 +484,16 @@ for t in range(1, Nt+ 1):
                 #enters the up left
                 Index_par_ghost_up_left.append(Index) #add the index to the list
                 Index_par_ghost_up_left_set.add(Index)
-                XY_proc_update[7, Index, :] = XY_proc_update[2, Index, :].copy() #update the local position of the particule
+                XY_proc[7, Index, :] = XY_proc[2, Index, :].copy() #update the local position of the particule
                 Vp_proc[7, Index, :] = Vp_proc[2,  Index, :].copy() #Update the local speed of the particule
-                XY_proc_update[2, Index, :] = [0, 0] #Remove the positon of the particule
+                XY_proc[2, Index, :] = [0, 0] #Remove the positon of the particule
                 Vp_proc[2,  Index, :] = [0, 0] #Remove the speed of the particule 
                 Index_par_ghost_up.pop(par_up) #Index of the new particule added
                 Index_par_ghost_up_set.discard(Index)
             #up - leaves
             elif Position_y > Local_ghost_up:
                 #leaves the proc area
-                XY_proc_update[2, Index, :] = [0, 0] #Remove the positon of the particule
+                XY_proc[2, Index, :] = [0, 0] #Remove the positon of the particule
                 Vp_proc[2,  Index, :] = [0, 0] #Remove the speed of the particule 
                 Index_par_ghost_up.pop(par_up) #Index of the new particule added
                 Index_par_ghost_up_set.discard(Index)
@@ -504,9 +502,9 @@ for t in range(1, Nt+ 1):
                 #enters the local
                 Index_par_local.append(Index) #add the index to the list
                 Index_par_local_set.add(Index)
-                XY_proc_update[8, Index, :] = XY_proc_update[2, Index, :].copy() #update the local position of the particule
+                XY_proc[8, Index, :] = XY_proc[2, Index, :].copy() #update the local position of the particule
                 Vp_proc[8, Index, :] = Vp_proc[2,  Index, :].copy() #Update the local speed of the particule
-                XY_proc_update[2, Index, :] = [0, 0] #Remove the positon of the particule
+                XY_proc[2, Index, :] = [0, 0] #Remove the positon of the particule
                 Vp_proc[2,  Index, :] = [0, 0] #Remove the speed of the particule 
                 Index_par_ghost_up.pop(par_up) #Index of the new particule added
                 Index_par_ghost_up_set.discard(Index)
@@ -514,17 +512,17 @@ for t in range(1, Nt+ 1):
         #down ghost interactions
         for par_down in reversed(range(len(Index_par_ghost_down))):
             Index = Index_par_ghost_down[par_down] #index of the particule in the ghost down area
-            Position_x = XY_proc_update[3, Index, 0]
-            Position_y = XY_proc_update[3, Index, 1]
+            Position_x = XY_proc[3, Index, 0]
+            Position_y = XY_proc[3, Index, 1]
             #4 cases in 2d
             #forward - down to down right
             if Local_right <= Position_x <= Local_ghost_right and Local_ghost_down <= Position_y < Local_down:
                 #enters the down right
                 Index_par_ghost_down_right.append(Index) #add the index to the list
                 Index_par_ghost_down_right_set.add(Index)
-                XY_proc_update[5, Index, :] = XY_proc_update[3, Index, :].copy() #update the local position of the particule
+                XY_proc[5, Index, :] = XY_proc[3, Index, :].copy() #update the local position of the particule
                 Vp_proc[5, Index, :] = Vp_proc[3, Index, :].copy() #Update the local speed of the particule
-                XY_proc_update[3, Index, :] = [0, 0] #Remove the positon of the particule
+                XY_proc[3, Index, :] = [0, 0] #Remove the positon of the particule
                 Vp_proc[3, Index, :] = [0, 0] #Remove the speed of the particule 
                 Index_par_ghost_down.pop(par_down) #Index of the new particule added
                 Index_par_ghost_down_set.discard(Index)
@@ -533,16 +531,16 @@ for t in range(1, Nt+ 1):
                 #enters the down left
                 Index_par_ghost_down_left.append(Index) #add the index to the list
                 Index_par_ghost_down_left_set.add(Index)
-                XY_proc_update[6, Index, :] = XY_proc_update[3, Index, :].copy() #update the local position of the particule
+                XY_proc[6, Index, :] = XY_proc[3, Index, :].copy() #update the local position of the particule
                 Vp_proc[6, Index, :] = Vp_proc[3, Index, :].copy() #Update the local speed of the particule
-                XY_proc_update[3, Index, :] = [0, 0] #Remove the positon of the particule
+                XY_proc[3, Index, :] = [0, 0] #Remove the positon of the particule
                 Vp_proc[3, Index, :] = [0, 0] #Remove the speed of the particule 
                 Index_par_ghost_down.pop(par_down) #Index of the new particule added
                 Index_par_ghost_down_set.discard(Index)
             #down - leaves
             elif Position_y < Local_ghost_down:
                 #leaves the proc area
-                XY_proc_update[3, Index, :] = [0, 0] #Remove the positon of the particule
+                XY_proc[3, Index, :] = [0, 0] #Remove the positon of the particule
                 Vp_proc[3, Index, :] = [0, 0] #Remove the speed of the particule 
                 Index_par_ghost_down.pop(par_down) #Index of the new particule added
                 Index_par_ghost_down_set.discard(Index)
@@ -551,9 +549,9 @@ for t in range(1, Nt+ 1):
                 #enters the local
                 Index_par_local.append(Index) #add the index to the list
                 Index_par_local_set.add(Index)
-                XY_proc_update[8, Index, :] = XY_proc_update[3, Index, :].copy() #update the local position of the particule
+                XY_proc[8, Index, :] = XY_proc[3, Index, :].copy() #update the local position of the particule
                 Vp_proc[8, Index, :] = Vp_proc[3, Index, :].copy() #Update the local speed of the particule
-                XY_proc_update[3, Index, :] = [0, 0] #Remove the positon of the particule
+                XY_proc[3, Index, :] = [0, 0] #Remove the positon of the particule
                 Vp_proc[3, Index, :] = [0, 0] #Remove the speed of the particule 
                 Index_par_ghost_down.pop(par_down) #Index of the new particule added
                 Index_par_ghost_down_set.discard(Index)
@@ -561,14 +559,14 @@ for t in range(1, Nt+ 1):
         #up right ghost interactions
         for par_up_right in reversed(range(len(Index_par_ghost_up_right))):
             Index = Index_par_ghost_up_right[par_up_right] #index of the particule in the ghost up right area
-            Position_x = XY_proc_update[4, Index, 0]
-            Position_y = XY_proc_update[4, Index, 1]
+            Position_x = XY_proc[4, Index, 0]
+            Position_y = XY_proc[4, Index, 1]
             #3 cases in 2d
             #forward or up - upright to leave
             # up or right - leaves
             if Position_y > Local_ghost_up or Position_x > Local_ghost_right:
                 #leaves the proc area
-                XY_proc_update[4, Index, :] = [0, 0] #Remove the positon of the particule
+                XY_proc[4, Index, :] = [0, 0] #Remove the positon of the particule
                 Vp_proc[4, Index, :] = [0, 0] #Remove the speed of the particule 
                 Index_par_ghost_up_right.pop(par_up_right) #Index of the new particule added
                 Index_par_ghost_up_right_set.discard(Index)
@@ -577,9 +575,9 @@ for t in range(1, Nt+ 1):
                 #enters the ghost right
                 Index_par_ghost_right.append(Index) #add the index to the list
                 Index_par_ghost_right_set.add(Index)
-                XY_proc_update[0, Index, :] = XY_proc_update[4, Index, :].copy() #update the local position of the particule
+                XY_proc[0, Index, :] = XY_proc[4, Index, :].copy() #update the local position of the particule
                 Vp_proc[0, Index, :] = Vp_proc[4, Index, :].copy() #Update the local speed of the particule
-                XY_proc_update[4, Index, :] = [0, 0] #Remove the positon of the particule
+                XY_proc[4, Index, :] = [0, 0] #Remove the positon of the particule
                 Vp_proc[4, Index, :] = [0, 0] #Remove the speed of the particule 
                 Index_par_ghost_up_right.pop(par_up_right) #Index of the new particule added
                 Index_par_ghost_up_right_set.discard(Index)
@@ -588,9 +586,9 @@ for t in range(1, Nt+ 1):
                 #enters the ghost up
                 Index_par_ghost_up.append(Index) #add the index to the list
                 Index_par_ghost_up_set.add(Index)
-                XY_proc_update[2, Index, :] = XY_proc_update[4, Index, :].copy() #update the local position of the particule
+                XY_proc[2, Index, :] = XY_proc[4, Index, :].copy() #update the local position of the particule
                 Vp_proc[2,  Index, :] = Vp_proc[4, Index, :].copy() #Update the local speed of the particule
-                XY_proc_update[4, Index, :] = [0, 0] #Remove the positon of the particule
+                XY_proc[4, Index, :] = [0, 0] #Remove the positon of the particule
                 Vp_proc[4, Index, :] = [0, 0] #Remove the speed of the particule 
                 Index_par_ghost_up_right.pop(par_up_right) #Index of the new particule added
                 Index_par_ghost_up_right_set.discard(Index)
@@ -598,9 +596,9 @@ for t in range(1, Nt+ 1):
             elif Local_left <= Position_x < Local_right and Local_down <= Position_y < Local_up:
                 Index_par_local.append(Index)
                 Index_par_local_set.add(Index)
-                XY_proc_update[8, Index, :] = XY_proc_update[4, Index, :].copy()
+                XY_proc[8, Index, :] = XY_proc[4, Index, :].copy()
                 Vp_proc[8, Index, :] = Vp_proc[4, Index, :].copy()
-                XY_proc_update[4, Index, :] = [0, 0] #Remove the positon of the particule
+                XY_proc[4, Index, :] = [0, 0] #Remove the positon of the particule
                 Vp_proc[4, Index, :] = [0, 0] #Remove the speed of the particule 
                 Index_par_ghost_up_right.pop(par_up_right) #Index of the new particule added
                 Index_par_ghost_up_right_set.discard(Index)
@@ -608,14 +606,14 @@ for t in range(1, Nt+ 1):
         #down right ghost interaction
         for par_down_right in reversed(range(len(Index_par_ghost_down_right))):
             Index = Index_par_ghost_down_right[par_down_right] #index of the particule in the ghost down right area
-            Position_x = XY_proc_update[5, Index, 0]
-            Position_y = XY_proc_update[5, Index, 1]
+            Position_x = XY_proc[5, Index, 0]
+            Position_y = XY_proc[5, Index, 1]
             #3 cases in 2d
             #forward or down - down right to leave
             # down or right - leaves
             if Position_y < Local_ghost_down or Position_x > Local_ghost_right:
                 #leaves the proc area
-                XY_proc_update[5, Index, :] = [0, 0] #Remove the positon of the particule
+                XY_proc[5, Index, :] = [0, 0] #Remove the positon of the particule
                 Vp_proc[5, Index, :] = [0, 0] #Remove the speed of the particule 
                 Index_par_ghost_down_right.pop(par_down_right) #Index of the new particule added
                 Index_par_ghost_down_right_set.discard(Index)
@@ -624,9 +622,9 @@ for t in range(1, Nt+ 1):
                 #enters the ghost right
                 Index_par_ghost_right.append(Index) #add the index to the list
                 Index_par_ghost_right_set.add(Index)
-                XY_proc_update[0, Index, :] = XY_proc_update[5, Index, :].copy() #update the local position of the particule
+                XY_proc[0, Index, :] = XY_proc[5, Index, :].copy() #update the local position of the particule
                 Vp_proc[0, Index, :] = Vp_proc[5, Index, :].copy() #Update the local speed of the particule
-                XY_proc_update[5, Index, :] = [0, 0] #Remove the positon of the particule
+                XY_proc[5, Index, :] = [0, 0] #Remove the positon of the particule
                 Vp_proc[5, Index, :] = [0, 0] #Remove the speed of the particule 
                 Index_par_ghost_down_right.pop(par_down_right) #Index of the new particule added
                 Index_par_ghost_down_right_set.discard(Index)
@@ -635,9 +633,9 @@ for t in range(1, Nt+ 1):
                 #enters the ghost down
                 Index_par_ghost_down.append(Index) #add the index to the list
                 Index_par_ghost_down_set.add(Index)
-                XY_proc_update[3, Index, :] = XY_proc_update[5, Index, :].copy() #update the local position of the particule
+                XY_proc[3, Index, :] = XY_proc[5, Index, :].copy() #update the local position of the particule
                 Vp_proc[3, Index, :] = Vp_proc[5, Index, :].copy() #Update the local speed of the particule
-                XY_proc_update[5, Index, :] = [0, 0] #Remove the positon of the particule
+                XY_proc[5, Index, :] = [0, 0] #Remove the positon of the particule
                 Vp_proc[5, Index, :] = [0, 0] #Remove the speed of the particule 
                 Index_par_ghost_down_right.pop(par_down_right) #Index of the new particule added
                 Index_par_ghost_down_right_set.discard(Index)
@@ -645,9 +643,9 @@ for t in range(1, Nt+ 1):
             elif Local_left <= Position_x < Local_right and Local_down <= Position_y < Local_up:
                 Index_par_local.append(Index)
                 Index_par_local_set.add(Index)
-                XY_proc_update[8, Index, :] = XY_proc_update[5, Index, :].copy()
+                XY_proc[8, Index, :] = XY_proc[5, Index, :].copy()
                 Vp_proc[8, Index, :] = Vp_proc[5, Index, :].copy()
-                XY_proc_update[5, Index, :] = [0, 0] #Remove the positon of the particule
+                XY_proc[5, Index, :] = [0, 0] #Remove the positon of the particule
                 Vp_proc[5, Index, :] = [0, 0] #Remove the speed of the particule 
                 Index_par_ghost_down_right.pop(par_down_right) #Index of the new particule added
                 Index_par_ghost_down_right_set.discard(Index)
@@ -655,14 +653,14 @@ for t in range(1, Nt+ 1):
         #down left ghost interactions
         for par_down_left in reversed(range(len(Index_par_ghost_down_left))):
             Index = Index_par_ghost_down_left[par_down_left] #index of the particule in the ghost down left area
-            Position_x = XY_proc_update[6, Index, 0]
-            Position_y = XY_proc_update[6, Index, 1]
+            Position_x = XY_proc[6, Index, 0]
+            Position_y = XY_proc[6, Index, 1]
             #3 cases in 2d
             #backward or down - down left to leave
             # down or left - leaves
             if Position_y < Local_ghost_down or Position_x < Local_ghost_left:
                 #leaves the proc area
-                XY_proc_update[6, Index, :] = [0, 0] #Remove the positon of the particule
+                XY_proc[6, Index, :] = [0, 0] #Remove the positon of the particule
                 Vp_proc[6, Index, :] = [0, 0] #Remove the speed of the particule 
                 Index_par_ghost_down_left.pop(par_down_left) #Index of the new particule added
                 Index_par_ghost_down_left_set.discard(Index)
@@ -671,9 +669,9 @@ for t in range(1, Nt+ 1):
                 #enters the ghost left
                 Index_par_ghost_left.append(Index) #add the index to the list
                 Index_par_ghost_left_set.add(Index)
-                XY_proc_update[1, Index, :] = XY_proc_update[6, Index, :].copy() #update the local position of the particule
+                XY_proc[1, Index, :] = XY_proc[6, Index, :].copy() #update the local position of the particule
                 Vp_proc[1, Index, :] = Vp_proc[6, Index, :].copy() #Update the local speed of the particule
-                XY_proc_update[6, Index, :] = [0, 0] #Remove the positon of the particule
+                XY_proc[6, Index, :] = [0, 0] #Remove the positon of the particule
                 Vp_proc[6, Index, :] = [0, 0] #Remove the speed of the particule 
                 Index_par_ghost_down_left.pop(par_down_left) #Index of the new particule added
                 Index_par_ghost_down_left_set.discard(Index)
@@ -682,9 +680,9 @@ for t in range(1, Nt+ 1):
                 #enters the ghost down
                 Index_par_ghost_down.append(Index) #add the index to the list
                 Index_par_ghost_down_set.add(Index)
-                XY_proc_update[3, Index, :] = XY_proc_update[6, Index, :].copy() #update the local position of the particule
+                XY_proc[3, Index, :] = XY_proc[6, Index, :].copy() #update the local position of the particule
                 Vp_proc[3, Index, :] = Vp_proc[6, Index, :].copy() #Update the local speed of the particule
-                XY_proc_update[6, Index, :] = [0, 0] #Remove the positon of the particule
+                XY_proc[6, Index, :] = [0, 0] #Remove the positon of the particule
                 Vp_proc[6, Index, :] = [0, 0] #Remove the speed of the particule 
                 Index_par_ghost_down_left.pop(par_down_left) #Index of the new particule added
                 Index_par_ghost_down_left_set.discard(Index)
@@ -692,9 +690,9 @@ for t in range(1, Nt+ 1):
             elif Local_left <= Position_x < Local_right and Local_down <= Position_y < Local_up:
                 Index_par_local.append(Index)
                 Index_par_local_set.add(Index)
-                XY_proc_update[8, Index, :] = XY_proc_update[6, Index, :].copy()
+                XY_proc[8, Index, :] = XY_proc[6, Index, :].copy()
                 Vp_proc[8, Index, :] = Vp_proc[6, Index, :].copy()
-                XY_proc_update[6, Index, :] = [0, 0] #Remove the positon of the particule
+                XY_proc[6, Index, :] = [0, 0] #Remove the positon of the particule
                 Vp_proc[6, Index, :] = [0, 0] #Remove the speed of the particule 
                 Index_par_ghost_down_left.pop(par_down_left) #Index of the new particule added
                 Index_par_ghost_down_left_set.discard(Index)
@@ -702,14 +700,14 @@ for t in range(1, Nt+ 1):
         #up left ghost interactions
         for par_up_left in reversed(range(len(Index_par_ghost_up_left))):
             Index = Index_par_ghost_up_left[par_up_left] #index of the particule in the ghost up left area
-            Position_x = XY_proc_update[7, Index, 0]
-            Position_y = XY_proc_update[7, Index, 1]
+            Position_x = XY_proc[7, Index, 0]
+            Position_y = XY_proc[7, Index, 1]
             #3 cases in 2d
             #backward or down - down left to leave
             # up or left - leaves
             if Position_y > Local_ghost_up or Position_x < Local_ghost_left:
                 #leaves the proc area
-                XY_proc_update[7, Index, :] = [0, 0] #Remove the positon of the particule
+                XY_proc[7, Index, :] = [0, 0] #Remove the positon of the particule
                 Vp_proc[7, Index, :] = [0, 0] #Remove the speed of the particule 
                 Index_par_ghost_up_left.pop(par_up_left) #Index of the new particule added
                 Index_par_ghost_up_left_set.discard(Index)
@@ -718,9 +716,9 @@ for t in range(1, Nt+ 1):
                 #enters the ghost left
                 Index_par_ghost_left.append(Index) #add the index to the list
                 Index_par_ghost_left_set.add(Index)
-                XY_proc_update[1, Index, :] = XY_proc_update[7, Index, :].copy() #update the local position of the particule
+                XY_proc[1, Index, :] = XY_proc[7, Index, :].copy() #update the local position of the particule
                 Vp_proc[1, Index, :] = Vp_proc[7, Index, :].copy() #Update the local speed of the particule
-                XY_proc_update[7, Index, :] = [0, 0] #Remove the positon of the particule
+                XY_proc[7, Index, :] = [0, 0] #Remove the positon of the particule
                 Vp_proc[7, Index, :] = [0, 0] #Remove the speed of the particule 
                 Index_par_ghost_up_left.pop(par_up_left) #Index of the new particule added
                 Index_par_ghost_up_left_set.discard(Index)
@@ -729,9 +727,9 @@ for t in range(1, Nt+ 1):
                 #enters the ghost up
                 Index_par_ghost_up.append(Index) #add the index to the list
                 Index_par_ghost_up_set.add(Index)
-                XY_proc_update[2, Index, :] = XY_proc_update[7, Index, :].copy() #update the local position of the particule
+                XY_proc[2, Index, :] = XY_proc[7, Index, :].copy() #update the local position of the particule
                 Vp_proc[2,  Index, :] = Vp_proc[7, Index, :].copy() #Update the local speed of the particule
-                XY_proc_update[7, Index, :] = [0, 0] #Remove the positon of the particule
+                XY_proc[7, Index, :] = [0, 0] #Remove the positon of the particule
                 Vp_proc[7, Index, :] = [0, 0] #Remove the speed of the particule 
                 Index_par_ghost_up_left.pop(par_up_left) #Index of the new particule added
                 Index_par_ghost_up_left_set.discard(Index)
@@ -739,9 +737,9 @@ for t in range(1, Nt+ 1):
             elif Local_left <= Position_x < Local_right and Local_down <= Position_y < Local_up:
                 Index_par_local.append(Index)
                 Index_par_local_set.add(Index)
-                XY_proc_update[8, Index, :] = XY_proc_update[7, Index, :].copy()
+                XY_proc[8, Index, :] = XY_proc[7, Index, :].copy()
                 Vp_proc[8, Index, :] = Vp_proc[7, Index, :].copy()
-                XY_proc_update[7, Index, :] = [0, 0] #Remove the positon of the particule
+                XY_proc[7, Index, :] = [0, 0] #Remove the positon of the particule
                 Vp_proc[7, Index, :] = [0, 0] #Remove the speed of the particule 
                 Index_par_ghost_up_left.pop(par_up_left) #Index of the new particule added
                 Index_par_ghost_up_left_set.discard(Index)
@@ -749,75 +747,75 @@ for t in range(1, Nt+ 1):
         #update the local first if it is out of bounds 
         for par in reversed(range(len(Index_par_local))):
             Index = Index_par_local[par] #index in the xy, vp and other
-            Position_x = XY_proc_update[8, Index, 0]
-            Position_y = XY_proc_update[8, Index, 1]                
+            Position_x = XY_proc[8, Index, 0]
+            Position_y = XY_proc[8, Index, 1]                
             #gathering the non covering cnditions to improve run time if and elifs that dont break the code basically
             #moving right -- technically but also called when moving backward
             if (Local_right > Position_x >= (Local_right - Buffer_zone_width[0]) and (Local_down + Buffer_zone_width[1]) <= Position_y < (Local_up - Buffer_zone_width[1]) and not Local_sent[Index, 0]): #xy >= ghost left du prochain
                 #The particule entered the left ghost zone of the right processor, 
                 #we send it to the right proc if we havent yet
-                Particle_info_right.append((Index, XY_proc_update[8, Index,:].copy(), Vp_proc[8, Index,:].copy())) # index, Position, velocity
+                Particle_info_right.append((Index, XY_proc[8, Index,:].copy(), Vp_proc[8, Index,:].copy())) # index, Position, velocity
                 Local_sent[Index,0] = True
             #moving left
             elif (Local_left <= Position_x <= (Local_left + Buffer_zone_width[0]) and (Local_down + Buffer_zone_width[1]) <= Position_y < (Local_up - Buffer_zone_width[1]) and not Local_sent[Index, 1]):
                 #The particule entered the right ghost zone of the left processor,
                 #we send it to the left proc if we havent yet
-                Particle_info_left.append((Index, XY_proc_update[8, Index,:].copy(), Vp_proc[8, Index,:].copy())) # index, position, velocity
+                Particle_info_left.append((Index, XY_proc[8, Index,:].copy(), Vp_proc[8, Index,:].copy())) # index, position, velocity
                 Local_sent[Index, 1] = True
             #up
             elif (Local_up > Position_y >= (Local_up - Buffer_zone_width[1]) and (Local_left + Buffer_zone_width[0]) <= Position_x < (Local_right - Buffer_zone_width[0]) and not Local_sent[Index, 2]):
                 #the particle has entered the down ghost zone of the up proc
-                Particle_info_up.append((Index, XY_proc_update[8, Index, :].copy(), Vp_proc[8, Index, :].copy())) #index, position, velocity
+                Particle_info_up.append((Index, XY_proc[8, Index, :].copy(), Vp_proc[8, Index, :].copy())) #index, position, velocity
                 Local_sent [Index, 2] = True
             #down
             elif (Local_down <= Position_y <= (Local_down + Buffer_zone_width[1]) and (Local_left + Buffer_zone_width[0]) <= Position_x < (Local_right - Buffer_zone_width[0]) and not Local_sent[Index, 3]):
                 #the particle has entered the up ghost zone of the down particle
-                Particle_info_down.append((Index, XY_proc_update[8, Index, :].copy(), Vp_proc[8, Index, :].copy())) #index, position, velocity
+                Particle_info_down.append((Index, XY_proc[8, Index, :].copy(), Vp_proc[8, Index, :].copy())) #index, position, velocity
                 Local_sent [Index, 3] = True
             #up-right  
             elif (Local_up > Position_y >= (Local_up - Buffer_zone_width[1]) and Local_right > Position_x >= (Local_right - Buffer_zone_width[0]) and not Local_sent[Index, 4]):
                 #enters the down left of the up right particle, but also the down of the up and the left of the right
                 #down left of the up right
-                Particle_info_up_right.append((Index, XY_proc_update[8, Index, :].copy(), Vp_proc[8, Index, :].copy()))
+                Particle_info_up_right.append((Index, XY_proc[8, Index, :].copy(), Vp_proc[8, Index, :].copy()))
                 Local_sent[Index, 4] = True
                 #down of the up
-                Particle_info_up.append((Index, XY_proc_update[8, Index, :].copy(), Vp_proc[8, Index, :].copy())) #index, position, velocity
+                Particle_info_up.append((Index, XY_proc[8, Index, :].copy(), Vp_proc[8, Index, :].copy())) #index, position, velocity
                 Local_sent [Index, 2] = True
                 #left of the right
-                Particle_info_right.append((Index, XY_proc_update[8, Index,:].copy(), Vp_proc[8, Index,:].copy())) # index, position, velocity
+                Particle_info_right.append((Index, XY_proc[8, Index,:].copy(), Vp_proc[8, Index,:].copy())) # index, position, velocity
                 Local_sent[Index, 1] = True   
             #down-right
             elif (Local_down <= Position_y < (Local_down + Buffer_zone_width[1]) and Local_right > Position_x >= (Local_right - Buffer_zone_width[0]) and not Local_sent[Index, 5]):
                 #enters the up left ghost of the down right proc but also the up of the down and the left of the right
-                Particle_info_down_right.append((Index, XY_proc_update[8, Index, :].copy(), Vp_proc[8, Index, :].copy()))
+                Particle_info_down_right.append((Index, XY_proc[8, Index, :].copy(), Vp_proc[8, Index, :].copy()))
                 Local_sent[Index, 5] = True
                 #up of the down
-                Particle_info_down.append((Index, XY_proc_update[8, Index, :].copy(), Vp_proc[8, Index, :].copy())) #index, position, velocity
+                Particle_info_down.append((Index, XY_proc[8, Index, :].copy(), Vp_proc[8, Index, :].copy())) #index, position, velocity
                 Local_sent [Index, 3] = True
                 #left of the right
-                Particle_info_right.append((Index, XY_proc_update[8, Index,:].copy(), Vp_proc[8, Index,:].copy())) # index, position, velocity
+                Particle_info_right.append((Index, XY_proc[8, Index,:].copy(), Vp_proc[8, Index,:].copy())) # index, position, velocity
                 Local_sent[Index, 1] = True
             #down-left
             elif (Local_down < Position_y < (Local_down + Buffer_zone_width[1]) and Local_left < Position_x <= (Local_left + Buffer_zone_width[0]) and not Local_sent[Index, 6]):
                 #enters the up right ghost of the down left particle but also in the up of the down and the right of the left
-                Particle_info_down_left.append((Index, XY_proc_update[8, Index, :].copy(), Vp_proc[8, Index, :].copy()))
+                Particle_info_down_left.append((Index, XY_proc[8, Index, :].copy(), Vp_proc[8, Index, :].copy()))
                 Local_sent[Index, 6] = True
                 #up of the down
-                Particle_info_down.append((Index, XY_proc_update[8, Index, :].copy(), Vp_proc[8, Index, :].copy())) #index, position, velocity
+                Particle_info_down.append((Index, XY_proc[8, Index, :].copy(), Vp_proc[8, Index, :].copy())) #index, position, velocity
                 Local_sent [Index, 3] = True
                 #right of the left
-                Particle_info_left.append((Index, XY_proc_update[8, Index,:].copy(), Vp_proc[8, Index,:].copy())) # index, Position, velocity
+                Particle_info_left.append((Index, XY_proc[8, Index,:].copy(), Vp_proc[8, Index,:].copy())) # index, Position, velocity
                 Local_sent[Index,0] = True   
             #up left
             elif (Local_up > Position_y >= (Local_up - Buffer_zone_width[1]) and Local_left < Position_x <= (Local_left + Buffer_zone_width[0]) and not Local_sent[Index, 7]):
                 #enters the down right ghost of the up left particle but also down of ht ep and right of the left
-                Particle_info_up_left.append((Index, XY_proc_update[8, Index, :].copy(), Vp_proc[8, Index, :].copy()))
+                Particle_info_up_left.append((Index, XY_proc[8, Index, :].copy(), Vp_proc[8, Index, :].copy()))
                 Local_sent[Index, 7] = True
                 #down of the up 
-                Particle_info_up.append((Index, XY_proc_update[8, Index, :].copy(), Vp_proc[8, Index, :].copy())) #index, position, velocity
+                Particle_info_up.append((Index, XY_proc[8, Index, :].copy(), Vp_proc[8, Index, :].copy())) #index, position, velocity
                 Local_sent [Index, 2] = True
                 #right of the left
-                Particle_info_left.append((Index, XY_proc_update[8, Index,:].copy(), Vp_proc[8, Index,:].copy())) # index, Position, velocity
+                Particle_info_left.append((Index, XY_proc[8, Index,:].copy(), Vp_proc[8, Index,:].copy())) # index, Position, velocity
                 Local_sent[Index,0] = True 
                 
             #particule is leaving the local area for a ghost position    
@@ -827,9 +825,9 @@ for t in range(1, Nt+ 1):
                 #the particule left the main local proc area, enters the right ghost area    
                 Index_par_ghost_right.append(Index)#add the index to the end of the list  
                 Index_par_ghost_right_set.add(Index)        
-                XY_proc_update[0, Index,:] = XY_proc_update[8, Index, :].copy() #associate the local Position with the ghost         
+                XY_proc[0, Index,:] = XY_proc[8, Index, :].copy() #associate the local Position with the ghost         
                 Vp_proc[0, Index, :] = Vp_proc[8, Index, :].copy() #associate the local speed with the ghost 
-                XY_proc_update[8, Index, :] = [0, 0] #set the local to 00 
+                XY_proc[8, Index, :] = [0, 0] #set the local to 00 
                 Vp_proc[8, Index, :] = [0, 0] # set the local back to 00
                 Index_par_local.pop(par)#remove from the particle index list
                 Index_par_local_set.discard(Index)
@@ -838,9 +836,9 @@ for t in range(1, Nt+ 1):
                 #the particule left the main local proc area, enters the left ghost area    
                 Index_par_ghost_left.append(Index)#add the index to the end of the list
                 Index_par_ghost_left_set.add(Index)         
-                XY_proc_update[1, Index,:] = XY_proc_update[8, Index, :].copy() #associate the local position with the ghost         
+                XY_proc[1, Index,:] = XY_proc[8, Index, :].copy() #associate the local position with the ghost         
                 Vp_proc[1, Index, :] = Vp_proc[8, Index, :].copy() #associate the local speed with the ghost 
-                XY_proc_update[8, Index, :] = [0, 0] #set the local to 00 
+                XY_proc[8, Index, :] = [0, 0] #set the local to 00 
                 Vp_proc[8, Index, :] = [0, 0] # set the local back to 00
                 Index_par_local.pop(par)#remove from the particle index list
                 Index_par_local_set.discard(Index)
@@ -849,9 +847,9 @@ for t in range(1, Nt+ 1):
                 #the particle enters the ghost up area and leaves the local
                 Index_par_ghost_up.append(Index)#add the index to the end of the list
                 Index_par_ghost_up_set.add(Index)
-                XY_proc_update[2, Index, :] = XY_proc_update[8, Index, :].copy()#associate the updated local position with the up ghost
+                XY_proc[2, Index, :] = XY_proc[8, Index, :].copy()#associate the updated local position with the up ghost
                 Vp_proc[2,  Index, :] = Vp_proc[8, Index, :].copy() #local speed => ghost up speed for now( no collisions)
-                XY_proc_update[8, Index, :] = [0, 0] #set the local to 00 
+                XY_proc[8, Index, :] = [0, 0] #set the local to 00 
                 Vp_proc[8, Index, :] = [0, 0] # set the local back to 00
                 Index_par_local.pop(par)#remove from the particle index list
                 Index_par_local_set.discard(Index)
@@ -860,9 +858,9 @@ for t in range(1, Nt+ 1):
                 #the particle enters the ghost down area and leaves the local
                 Index_par_ghost_down.append(Index)#add the index to the end of the list
                 Index_par_ghost_down_set.add(Index)
-                XY_proc_update[3, Index, :] = XY_proc_update[8, Index, :].copy()#associate the updated local position with the down ghost
+                XY_proc[3, Index, :] = XY_proc[8, Index, :].copy()#associate the updated local position with the down ghost
                 Vp_proc[3, Index, :] = Vp_proc[8, Index, :].copy() #local speed => ghost down speed for now( no collisions)
-                XY_proc_update[8, Index, :] = [0, 0] #set the local to 00 
+                XY_proc[8, Index, :] = [0, 0] #set the local to 00 
                 Vp_proc[8, Index, :] = [0, 0] # set the local back to 00
                 Index_par_local.pop(par)#remove from the particle index list
                 Index_par_local_set.discard(Index)
@@ -871,9 +869,9 @@ for t in range(1, Nt+ 1):
                 #particle enters the ghost up right area
                 Index_par_ghost_up_right.append(Index)#add the index to the end of the list
                 Index_par_ghost_up_right_set.add(Index)
-                XY_proc_update[4, Index, :] = XY_proc_update[8, Index, :].copy()#associate the updated local position with the ghost
+                XY_proc[4, Index, :] = XY_proc[8, Index, :].copy()#associate the updated local position with the ghost
                 Vp_proc[4, Index, :] = Vp_proc[8, Index, :].copy() #local speed => ghost speed for now( no collisions)
-                XY_proc_update[8, Index, :] = [0, 0] #set the local to 00 
+                XY_proc[8, Index, :] = [0, 0] #set the local to 00 
                 Vp_proc[8, Index, :] = [0, 0] # set the local back to 00
                 Index_par_local.pop(par)#remove from the particle index list
                 Index_par_local_set.discard(Index)
@@ -882,9 +880,9 @@ for t in range(1, Nt+ 1):
                 #particle enters the ghost down right area
                 Index_par_ghost_down_right.append(Index)#add the index to the end of the list
                 Index_par_ghost_down_right_set.add(Index)
-                XY_proc_update[5, Index, :] = XY_proc_update[8, Index, :].copy()#associate the updated local position with the ghost
+                XY_proc[5, Index, :] = XY_proc[8, Index, :].copy()#associate the updated local position with the ghost
                 Vp_proc[5, Index, :] = Vp_proc[8, Index, :].copy() #local speed => ghost speed for now( no collisions)
-                XY_proc_update[8, Index, :] = [0, 0] #set the local to 00 
+                XY_proc[8, Index, :] = [0, 0] #set the local to 00 
                 Vp_proc[8, Index, :] = [0, 0] # set the local back to 00
                 Index_par_local.pop(par)#remove from the particle index list
                 Index_par_local_set.discard(Index)
@@ -893,9 +891,9 @@ for t in range(1, Nt+ 1):
                 #particle enters the down left area
                 Index_par_ghost_down_left.append(Index)#add the index to the end of the list
                 Index_par_ghost_down_left_set.add(Index)
-                XY_proc_update[6, Index, :] = XY_proc_update[8, Index, :].copy()#associate the updated local position with the ghost
+                XY_proc[6, Index, :] = XY_proc[8, Index, :].copy()#associate the updated local position with the ghost
                 Vp_proc[6, Index, :] = Vp_proc[8, Index, :].copy() #local speed => ghost speed for now( no collisions)
-                XY_proc_update[8, Index, :] = [0, 0] #set the local to 00 
+                XY_proc[8, Index, :] = [0, 0] #set the local to 00 
                 Vp_proc[8, Index, :] = [0, 0] # set the local back to 00
                 Index_par_local.pop(par)#remove from the particle index list
                 Index_par_local_set.discard(Index)
@@ -904,9 +902,9 @@ for t in range(1, Nt+ 1):
                 #particle enters the up left area
                 Index_par_ghost_up_left.append(Index)#add the index to the end of the list
                 Index_par_ghost_up_left_set.add(Index)
-                XY_proc_update[7, Index, :] = XY_proc_update[8, Index, :].copy()#associate the updated local position with the ghost
+                XY_proc[7, Index, :] = XY_proc[8, Index, :].copy()#associate the updated local position with the ghost
                 Vp_proc[7, Index, :] = Vp_proc[8, Index, :].copy() #local speed => ghost speed for now( no collisions)
-                XY_proc_update[8,Index, :] = [0, 0] #set the local to 00 
+                XY_proc[8,Index, :] = [0, 0] #set the local to 00 
                 Vp_proc[8, Index, :] = [0, 0] # set the local back to 00
                 Index_par_local.pop(par)#remove from the particle index list
                 Index_par_local_set.discard(Index)
@@ -960,8 +958,8 @@ for t in range(1, Nt+ 1):
     #incoming from left = ghost left
     if incoming_from_left is None: #if null
         incoming_from_left = [] #set to empty to be able to loop on it without errors
-    elif incoming_from_left != []:
-        print("incoming from left: ", incoming_from_left)
+    # elif incoming_from_left != []:
+    #     print("incoming from left: ", incoming_from_left)
     for Index, pos, vel in incoming_from_left: #for all the different particles
         #add to ghost left
         if coordinates_x == 0:
@@ -969,8 +967,7 @@ for t in range(1, Nt+ 1):
         if Index not in Index_par_ghost_left_set:
             Index_par_ghost_left.append(Index) #add the particle index
             Index_par_ghost_left_set.add(Index)
-            XY_proc_update[1, Index] = pos #associate the postion
-            print(XY_proc[1, Index])
+            XY_proc[1, Index] = pos #associate the postion
             Vp_proc[1, Index] = vel #and velocity
 
     #incoming from right = ghost right
@@ -1080,7 +1077,7 @@ for t in range(1, Nt+ 1):
             XY_proc[7, Index] = pos
             Vp_proc[7, Index] = vel
             
-    XY_local_saved[t - 1, :, :] = XY_proc_update[8,:,:].copy() #save the updated values 
+    XY_local_saved[t - 1, :, :] = XY_proc[8,:,:].copy() #save the updated values 
 
 #saving the values of the local particles 
 if rank == 0: #the proc 0 will receive all of the other locally saved positoins of particles
@@ -1138,10 +1135,8 @@ if rank == 0:
     ax.set_ylabel("y (µm)")
     
     colors = np.empty(Num_Particules_end, dtype = object)
-    #colors[0:Num_Particules_start] = "black"
-    #colors[Num_Particules_start:Num_Particules_end] = "red"
-    colors[0] = "red"
-    colors[1] = "green"
+    colors[0:Num_Particules_start] = "black"
+    colors[Num_Particules_start:Num_Particules_end] = "red"
     #num particules - start with empty data
     init_pos = XY_master_saved[0, :, :].copy()
     s = radius_to_s(ax, Radius_particle)
