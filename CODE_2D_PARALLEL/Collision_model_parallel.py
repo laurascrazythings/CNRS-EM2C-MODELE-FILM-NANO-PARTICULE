@@ -135,15 +135,20 @@ save_gif_animation = True
 #Mesh - TO SET
 L_total = np.array([20, 20]) #Total Size in microm - HERE
 #Particles - TO SET
-Num_Particules = 2000 #particles to start - HERE
-Num_Particules_dt= 0 #particls added per second - HERE
-Radius_particle = 0.1 #radius of the particule
+Num_Particules = 500 #particles to start - HERE
+Num_Particules_dt= 1 #particls added per second - HERE
+Radius_particle = 0.01 #radius of the particule
 Highest_velocity = 1 #velocity of the particle
-Lowest_velocity = 0
+Lowest_velocity = 0.01
+Lowest_x_velocity = -1
+Highest_x_velocity = 1
 tau = 1.0 # relaxation time for Ornstein Uhlenbeck, chosen as 1 for now 
 U_g = np.array([0, 1]) # mean gas velocity
 B = 0.5 # noise intensity
-
+wall = set(); #0 for right, 1 for left, 2 for up, 3 for bottom, 4 for none
+wall.add(2)
+wall.add(3)
+#keep the periodicity but bounce if needed, the iff loops already exist to transfer the particle to the ghost; 
 
 # init var - DO NOT TOUCH
 Nt = int(T/ dt) #num of Iterations
@@ -153,13 +158,14 @@ Px, Py = dimensions_proc #neded to set the lines later
 Num_Particules_start = Num_Particules
 Num_Particules_end = int(Num_Particules +  Num_Particules_dt * (T_add_particles /dt))
 
+
 #particules init - DO NOT TOUCH
 if rank == 1 : #do not overload proc 0, need the if so that the rand doesnt run for each proc 
     #velocity rand
     Vp = np.zeros((Num_Particules_end,2)) #init the velocity
     # if position == 0 random velocity, if position == 1 : choice of velocity
     if position == 0:
-        Vp[:, 0] = np.random.uniform(low = Lowest_velocity, high = Highest_velocity, size = Num_Particules_end) # random x velocity, as the particles enter in the y direction , the whole set is random
+        Vp[:, 0] = np.random.uniform(low = Lowest_x_velocity, high = Highest_x_velocity, size = Num_Particules_end) # random x velocity, as the particles enter in the y direction , the whole set is random
         Vp[:Num_Particules, 1] = np.random.uniform(low = Lowest_velocity, high = Highest_velocity, size = Num_Particules)#the particle that start are random in y
         Vp[Num_Particules: Num_Particules_end, 1] = np.random.uniform(low = 0, high = Highest_velocity, size = Num_Particules_end - Num_Particules) #the particle that are added have a y direction that goes in the domain
     elif position == 1:
@@ -169,9 +175,9 @@ if rank == 1 : #do not overload proc 0, need the if so that the rand doesnt run 
     #position rand - position after to ensure that the position the particules can be on arent in the 0 to buffer are where it would not be able to be sent periodically 
     XY_start = np.zeros((Num_Particules_end,2)) #particule start position 
     #the particle cannot touch at init, would break the code fro collision, they wouldnt collide basically
-    
+    maximum_velocity = np.sqrt(np.max(np.abs(Vp[:,0]))**(2) + np.max(np.abs(Vp[:,1]))**(2))
     #The particle can't start in the last bufferzone. it wont be able to be updated, there is only border control no spawn control taking into account the perodical condition
-    Buffer_zone_width = np.array([np.max(np.abs(Vp[:,0])) * dt * 2.01, np.max(np.abs(Vp[:,1])) * dt * 2.01]) #Buffer depends on the velocity of the particule, more than 2 to ensure that a particule pings twice 
+    Buffer_zone_width = np.array([maximum_velocity * dt* 2.01, (maximum_velocity + U_g[1]) * dt * 2.01]) #Buffer depends on the velocity of the particule, more than 2 to ensure that a particule pings twice 
     Starting_X = round((Buffer_zone_width[0] + Radius_particle)/ (2 * Radius_particle )) #starting possible position
     Starting_Y = round((Buffer_zone_width[1] + Radius_particle)/ (2 * Radius_particle))
     num_X = L_total[0] / (2 * Radius_particle) #number of position possible
@@ -209,14 +215,14 @@ else:
     XY_start = None
     Vp = None
     Added_par = None
+    Buffer_zone_width = None
     
 #broadcast the values to the different procs
 XY_start = cart.bcast(XY_start, root = 1)
 Vp = cart.bcast(Vp, root = 1)
 Added_par = cart.bcast(Added_par, root = 1)
-
-#Buffer zone width
-Buffer_zone_width = np.array([np.max(np.abs(Vp[:,0])) * dt * 2.01, np.max(np.abs(Vp[:,1])) * dt * 2.01]) #Buffer depends on the velocity of the particule, more than 2 to ensure that a particule pings twice 
+Buffer_zone_width = cart.bcast(Buffer_zone_width, root = 1)
+# #Buffer depends on the velocity of the particule, more than 2 to ensure that a particule pings twice 
 
 #Each Proc's boundary - DO NOT TOUCH
 Local_left = np.array([0]) # defining the left before being rewritten
@@ -773,29 +779,28 @@ for t in range(1, Nt+ 1):
             Position_y = XY_proc[8, Index, 1]                
             #gathering the non covering cnditions to improve run time if and elifs that dont break the code basically
             #moving right -- technically but also called when moving backward
-            if (Local_right > Position_x >= (Local_right - Buffer_zone_width[0]) and (Local_down + Buffer_zone_width[1]) <= Position_y < (Local_up - Buffer_zone_width[1]) ): #xy >= ghost left du prochain #and not Local_sent[Index, 0]
+            if (Local_right > Position_x >= (Local_right - Buffer_zone_width[0]) and (Local_down + Buffer_zone_width[1]) <= Position_y < (Local_up - Buffer_zone_width[1]) and not(Local_right == L_total[0] and 0 in wall)): #xy >= ghost left du prochain #and not Local_sent[Index, 0]
                 #The particule entered the left ghost zone of the right processor, 
                 #we send it to the right proc if we havent yet
                 Particle_info_right.append((Index, XY_proc[8, Index,:].copy(), Vp_proc[8, Index,:].copy())) # index, Position, velocity
                 Local_sent[Index,0] = True
             #moving left
-            elif (Local_left <= Position_x <= (Local_left + Buffer_zone_width[0]) and (Local_down + Buffer_zone_width[1]) <= Position_y < (Local_up - Buffer_zone_width[1]) ): #and not Local_sent[Index, 1]
-                #The particule entered the right ghost zone of the left processor,
+            elif (Local_left <= Position_x <= (Local_left + Buffer_zone_width[0]) and (Local_down + Buffer_zone_width[1]) <= Position_y < (Local_up - Buffer_zone_width[1]) and not(Local_left == 0 and 1 in wall)): 
                 #we send it to the left proc if we havent yet
                 Particle_info_left.append((Index, XY_proc[8, Index,:].copy(), Vp_proc[8, Index,:].copy())) # index, position, velocity
                 Local_sent[Index, 1] = True
             #up
-            elif (Local_up > Position_y >= (Local_up - Buffer_zone_width[1]) and (Local_left + Buffer_zone_width[0]) <= Position_x < (Local_right - Buffer_zone_width[0]) ): #and not Local_sent[Index, 2]
+            elif (Local_up > Position_y >= (Local_up - Buffer_zone_width[1]) and (Local_left + Buffer_zone_width[0]) <= Position_x < (Local_right - Buffer_zone_width[0]) and not(Local_up == L_total[1] and 2 in wall)): 
                 #the particle has entered the down ghost zone of the up proc
                 Particle_info_up.append((Index, XY_proc[8, Index, :].copy(), Vp_proc[8, Index, :].copy())) #index, position, velocity
                 Local_sent [Index, 2] = True
             #down
-            elif (Local_down <= Position_y <= (Local_down + Buffer_zone_width[1]) and (Local_left + Buffer_zone_width[0]) <= Position_x < (Local_right - Buffer_zone_width[0]) ): #and not Local_sent[Index, 3]
+            elif (Local_down <= Position_y <= (Local_down + Buffer_zone_width[1]) and (Local_left + Buffer_zone_width[0]) <= Position_x < (Local_right - Buffer_zone_width[0]) and not(Local_up == 0 and 3 in wall)): 
                 #the particle has entered the up ghost zone of the down particle
                 Particle_info_down.append((Index, XY_proc[8, Index, :].copy(), Vp_proc[8, Index, :].copy())) #index, position, velocity
                 Local_sent [Index, 3] = True
             #up-right  
-            elif (Local_up > Position_y >= (Local_up - Buffer_zone_width[1]) and Local_right > Position_x >= (Local_right - Buffer_zone_width[0]) ):# and not Local_sent[Index, 4]
+            elif (Local_up > Position_y >= (Local_up - Buffer_zone_width[1]) and Local_right > Position_x >= (Local_right - Buffer_zone_width[0]) and not(Local_right == L_total[0] and 0 in wall) and not(Local_up == L_total[1] and 2 in wall)):
                 #enters the down left of the up right particle, but also the down of the up and the left of the right
                 #down left of the up right
                 Particle_info_up_right.append((Index, XY_proc[8, Index, :].copy(), Vp_proc[8, Index, :].copy()))
@@ -807,7 +812,7 @@ for t in range(1, Nt+ 1):
                 Particle_info_right.append((Index, XY_proc[8, Index,:].copy(), Vp_proc[8, Index,:].copy())) # index, position, velocity
                 Local_sent[Index, 1] = True   
             #down-right
-            elif (Local_down <= Position_y < (Local_down + Buffer_zone_width[1]) and Local_right > Position_x >= (Local_right - Buffer_zone_width[0]) ): #and not Local_sent[Index, 5]
+            elif (Local_down <= Position_y < (Local_down + Buffer_zone_width[1]) and Local_right > Position_x >= (Local_right - Buffer_zone_width[0]) and not(Local_right == L_total[0] and 0 in wall) and not(Local_up == 0 and 3 in wall)): 
                 #enters the up left ghost of the down right proc but also the up of the down and the left of the right
                 Particle_info_down_right.append((Index, XY_proc[8, Index, :].copy(), Vp_proc[8, Index, :].copy()))
                 Local_sent[Index, 5] = True
@@ -818,7 +823,7 @@ for t in range(1, Nt+ 1):
                 Particle_info_right.append((Index, XY_proc[8, Index,:].copy(), Vp_proc[8, Index,:].copy())) # index, position, velocity
                 Local_sent[Index, 1] = True
             #down-left
-            elif (Local_down < Position_y < (Local_down + Buffer_zone_width[1]) and Local_left < Position_x <= (Local_left + Buffer_zone_width[0]) and not Local_sent[Index, 6]):
+            elif (Local_down < Position_y < (Local_down + Buffer_zone_width[1]) and Local_left < Position_x <= (Local_left + Buffer_zone_width[0]) and not(Local_left == 0 and 1 in wall) and not(Local_up == 0 and 3 in wall)):
                 #enters the up right ghost of the down left particle but also in the up of the down and the right of the left
                 Particle_info_down_left.append((Index, XY_proc[8, Index, :].copy(), Vp_proc[8, Index, :].copy()))
                 Local_sent[Index, 6] = True
@@ -829,7 +834,7 @@ for t in range(1, Nt+ 1):
                 Particle_info_left.append((Index, XY_proc[8, Index,:].copy(), Vp_proc[8, Index,:].copy())) # index, Position, velocity
                 Local_sent[Index,0] = True   
             #up left
-            elif (Local_up > Position_y >= (Local_up - Buffer_zone_width[1]) and Local_left < Position_x <= (Local_left + Buffer_zone_width[0]) and not Local_sent[Index, 7]):
+            elif (Local_up > Position_y >= (Local_up - Buffer_zone_width[1]) and Local_left < Position_x <= (Local_left + Buffer_zone_width[0]) and not(Local_left == 0 and 1 in wall) and not(Local_up == L_total[1] and 2 in wall)):
                 #enters the down right ghost of the up left particle but also down of ht ep and right of the left
                 Particle_info_up_left.append((Index, XY_proc[8, Index, :].copy(), Vp_proc[8, Index, :].copy()))
                 Local_sent[Index, 7] = True
@@ -844,152 +849,205 @@ for t in range(1, Nt+ 1):
             #nominally in the same proc it should only be in one space so elifs work because only one condition may be true.
             #local to right ghost
             if Position_x >= Local_right and Local_up > Position_y >= Local_down:
-                #the particule left the main local proc area, enters the right ghost area    
-                Index_par_ghost_right.append(Index)#add the index to the end of the list  
-                Index_par_ghost_right_set.add(Index)        
-                XY_proc[0, Index,:] = XY_proc[8, Index, :].copy() #associate the local Position with the ghost         
-                Vp_proc[0, Index, :] = Vp_proc[8, Index, :].copy() #associate the local speed with the ghost 
-                if Local_sent[Index, 0] == False:
-                    print("saved a particle", XY_proc[8, Index,:].copy())
-                    Particle_info_right.append((Index, XY_proc[8, Index,:].copy(), Vp_proc[8, Index,:].copy())) # index, Position, velocity
-                    Local_sent[Index,0] = True
-                XY_proc[8, Index, :] = [0, 0] #set the local to 00 
-                Vp_proc[8, Index, :] = [0, 0] # set the local back to 00
-                Index_par_local.pop(par)#remove from the particle index list
-                Index_par_local_set.discard(Index)
+                #if right is a wall then change the position and velocity if not then pass it on to the right ghost 
+                if Local_right != L_total[0] or 0 not in wall:  
+                    #the particule left the main local proc area, enters the right ghost area 
+                    Index_par_ghost_right.append(Index)#add the index to the end of the list  
+                    Index_par_ghost_right_set.add(Index)        
+                    XY_proc[0, Index,:] = XY_proc[8, Index, :].copy() #associate the local Position with the ghost         
+                    Vp_proc[0, Index, :] = Vp_proc[8, Index, :].copy() #associate the local speed with the ghost 
+                    if Local_sent[Index, 0] == False:
+                        print("saved a particle", XY_proc[8, Index,:].copy())
+                        Particle_info_right.append((Index, XY_proc[8, Index,:].copy(), Vp_proc[8, Index,:].copy())) # index, Position, velocity
+                        Local_sent[Index,0] = True
+                    XY_proc[8, Index, :] = [0, 0] #set the local to 00 
+                    Vp_proc[8, Index, :] = [0, 0] # set the local back to 00
+                    Index_par_local.pop(par)#remove from the particle index list
+                    Index_par_local_set.discard(Index)
+                else:
+                    XY_proc[8, Index, 0] = XY_proc[8, Index, 0] - (XY_proc[8, Index, 0] - Local_right)  #set the position to the changed position after impact
+                    Vp_proc[8, Index, 0] = - Vp_proc[8, Index, 0] #reverse the speed in the x direction
             #local to left ghost 
             elif Position_x < Local_left and Local_down <= Position_y < Local_up :
-                #the particule left the main local proc area, enters the left ghost area    
-                Index_par_ghost_left.append(Index)#add the index to the end of the list
-                Index_par_ghost_left_set.add(Index)         
-                XY_proc[1, Index,:] = XY_proc[8, Index, :].copy() #associate the local position with the ghost         
-                Vp_proc[1, Index, :] = Vp_proc[8, Index, :].copy() #associate the local speed with the ghost 
-                if Local_sent[Index, 1] == False:
-                    print("saved a particle", XY_proc[8, Index,:].copy())
-                    Particle_info_left.append((Index, XY_proc[8, Index,:].copy(), Vp_proc[8, Index,:].copy())) # index, Position, velocity
-                    Local_sent[Index,1] = True
-                XY_proc[8, Index, :] = [0, 0] #set the local to 00 
-                Vp_proc[8, Index, :] = [0, 0] # set the local back to 00
-                Index_par_local.pop(par)#remove from the particle index list
-                Index_par_local_set.discard(Index)
+                #if left is a wall then change the position and velocity if not then pass it on to the left ghost 
+                if Local_left != 0 or 1 not in wall:
+                    #the particule left the main local proc area, enters the left ghost area    
+                    Index_par_ghost_left.append(Index)#add the index to the end of the list
+                    Index_par_ghost_left_set.add(Index)         
+                    XY_proc[1, Index,:] = XY_proc[8, Index, :].copy() #associate the local position with the ghost         
+                    Vp_proc[1, Index, :] = Vp_proc[8, Index, :].copy() #associate the local speed with the ghost 
+                    if Local_sent[Index, 1] == False:
+                        print("saved a particle", XY_proc[8, Index,:].copy())
+                        Particle_info_left.append((Index, XY_proc[8, Index,:].copy(), Vp_proc[8, Index,:].copy())) # index, Position, velocity
+                        Local_sent[Index,1] = True
+                    XY_proc[8, Index, :] = [0, 0] #set the local to 00 
+                    Vp_proc[8, Index, :] = [0, 0] # set the local back to 00
+                    Index_par_local.pop(par)#remove from the particle index list
+                    Index_par_local_set.discard(Index)
+                else:
+                    XY_proc[8, Index, 0] = XY_proc[8, Index, 0] - (XY_proc[8, Index, 0] - Local_left)  #set the position to the changed position after impact
+                    Vp_proc[8, Index, 0] = - Vp_proc[8, Index, 0] #reverse the speed in the x direction
             #local to up 
             elif(Position_y >= Local_up and Local_left <= Position_x < Local_right):
-                #the particle enters the ghost up area and leaves the local
-                Index_par_ghost_up.append(Index)#add the index to the end of the list
-                Index_par_ghost_up_set.add(Index)
-                XY_proc[2, Index, :] = XY_proc[8, Index, :].copy()#associate the updated local position with the up ghost
-                Vp_proc[2,  Index, :] = Vp_proc[8, Index, :].copy() #local speed => ghost up speed for now( no collisions)
-                if Local_sent[Index, 2] == False:
-                    print("saved a particle", XY_proc[8, Index,:].copy())
-                    Particle_info_up.append((Index, XY_proc[8, Index,:].copy(), Vp_proc[8, Index,:].copy())) # index, Position, velocity
-                    Local_sent[Index,2] = True
-                XY_proc[8, Index, :] = [0, 0] #set the local to 00 
-                Vp_proc[8, Index, :] = [0, 0] # set the local back to 00
-                Index_par_local.pop(par)#remove from the particle index list
-                Index_par_local_set.discard(Index)
+                #if up is a wall then change the position and velocity if not then pass it on to the up ghost 
+                if Local_up != L_total[1] or 2 not in wall:
+                    #the particle enters the ghost up area and leaves the local
+                    Index_par_ghost_up.append(Index)#add the index to the end of the list
+                    Index_par_ghost_up_set.add(Index)
+                    XY_proc[2, Index, :] = XY_proc[8, Index, :].copy()#associate the updated local position with the up ghost
+                    Vp_proc[2,  Index, :] = Vp_proc[8, Index, :].copy() #local speed => ghost up speed for now( no collisions)
+                    if Local_sent[Index, 2] == False:
+                        print("saved a particle", XY_proc[8, Index,:].copy())
+                        Particle_info_up.append((Index, XY_proc[8, Index,:].copy(), Vp_proc[8, Index,:].copy())) # index, Position, velocity
+                        Local_sent[Index,2] = True
+                    XY_proc[8, Index, :] = [0, 0] #set the local to 00 
+                    Vp_proc[8, Index, :] = [0, 0] # set the local back to 00
+                    Index_par_local.pop(par)#remove from the particle index list
+                    Index_par_local_set.discard(Index)
+                else :
+                    XY_proc[8, Index, 1] = XY_proc[8, Index, 1] - (XY_proc[8, Index, 1] - Local_up)  #set the position to the changed position after impact
+                    Vp_proc[8, Index, 1] = - Vp_proc[8, Index, 1] #reverse the speed in the y direction
             #local to down
             elif(Position_y < Local_down and Local_left <= Position_x < Local_right):
-                #the particle enters the ghost down area and leaves the local
-                Index_par_ghost_down.append(Index)#add the index to the end of the list
-                Index_par_ghost_down_set.add(Index)
-                XY_proc[3, Index, :] = XY_proc[8, Index, :].copy()#associate the updated local position with the down ghost
-                Vp_proc[3, Index, :] = Vp_proc[8, Index, :].copy() #local speed => ghost down speed for now( no collisions)
-                if Local_sent[Index, 3] == False:
-                    print("saved a particle", XY_proc[8, Index,:].copy())
-                    Particle_info_down.append((Index, XY_proc[8, Index,:].copy(), Vp_proc[8, Index,:].copy())) # index, Position, velocity
-                    Local_sent[Index,3] = True
-                XY_proc[8, Index, :] = [0, 0] #set the local to 00 
-                Vp_proc[8, Index, :] = [0, 0] # set the local back to 00
-                Index_par_local.pop(par)#remove from the particle index list
-                Index_par_local_set.discard(Index)
+                #if down is a wall then change the position and velocity if not then pass it on to the down ghost 
+                if Local_down != 0 or 3 not in wall:
+                    #the particle enters the ghost down area and leaves the local
+                    Index_par_ghost_down.append(Index)#add the index to the end of the list
+                    Index_par_ghost_down_set.add(Index)
+                    XY_proc[3, Index, :] = XY_proc[8, Index, :].copy()#associate the updated local position with the down ghost
+                    Vp_proc[3, Index, :] = Vp_proc[8, Index, :].copy() #local speed => ghost down speed for now( no collisions)
+                    if Local_sent[Index, 3] == False:
+                        print("saved a particle", XY_proc[8, Index,:].copy())
+                        Particle_info_down.append((Index, XY_proc[8, Index,:].copy(), Vp_proc[8, Index,:].copy())) # index, Position, velocity
+                        Local_sent[Index,3] = True
+                    XY_proc[8, Index, :] = [0, 0] #set the local to 00 
+                    Vp_proc[8, Index, :] = [0, 0] # set the local back to 00
+                    Index_par_local.pop(par)#remove from the particle index list
+                    Index_par_local_set.discard(Index)
+                else:
+                    XY_proc[8, Index, 1] = XY_proc[8, Index, 1] - (XY_proc[8, Index, 1] - Local_up)  #set the position to the changed position after impact
+                    Vp_proc[8, Index, 1] = - Vp_proc[8, Index, 1] #reverse the speed in the y direction
             #local to up right    
             elif Position_x >= Local_right and Local_up <= Position_y <= Local_ghost_up:
-                #particle enters the ghost up right area
-                Index_par_ghost_up_right.append(Index)#add the index to the end of the list
-                Index_par_ghost_up_right_set.add(Index)
-                XY_proc[4, Index, :] = XY_proc[8, Index, :].copy()#associate the updated local position with the ghost
-                Vp_proc[4, Index, :] = Vp_proc[8, Index, :].copy() #local speed => ghost speed for now( no collisions)
-                if Local_sent[Index, 4] == False:
-                    print("saved a particle", XY_proc[8, Index,:].copy())
-                    Particle_info_up_right.append((Index, XY_proc[8, Index,:].copy(), Vp_proc[8, Index,:].copy())) # index, Position, velocity
-                    Local_sent[Index, 4] = True
-                    #down of the up
-                    Particle_info_up.append((Index, XY_proc[8, Index, :].copy(), Vp_proc[8, Index, :].copy())) #index, position, velocity
-                    Local_sent [Index, 2] = True
-                    #left of the right
-                    Particle_info_right.append((Index, XY_proc[8, Index,:].copy(), Vp_proc[8, Index,:].copy())) # index, position, velocity
-                    Local_sent[Index, 1] = True
-                XY_proc[8, Index, :] = [0, 0] #set the local to 00 
-                Vp_proc[8, Index, :] = [0, 0] # set the local back to 00
-                Index_par_local.pop(par)#remove from the particle index list
-                Index_par_local_set.discard(Index)
+                #if up and right are a wall then change the position and velocity if not then pass it on to the up right ghost 
+                if (Local_up != L_total[1] or 2 not in wall) and (Local_right != L_total[0] or 0 not in wall):
+                    #particle enters the ghost up right area
+                    Index_par_ghost_up_right.append(Index)#add the index to the end of the list
+                    Index_par_ghost_up_right_set.add(Index)
+                    XY_proc[4, Index, :] = XY_proc[8, Index, :].copy()#associate the updated local position with the ghost
+                    Vp_proc[4, Index, :] = Vp_proc[8, Index, :].copy() #local speed => ghost speed for now( no collisions)
+                    if Local_sent[Index, 4] == False:
+                        print("saved a particle", XY_proc[8, Index,:].copy())
+                        Particle_info_up_right.append((Index, XY_proc[8, Index,:].copy(), Vp_proc[8, Index,:].copy())) # index, Position, velocity
+                        Local_sent[Index, 4] = True
+                        #down of the up
+                        Particle_info_up.append((Index, XY_proc[8, Index, :].copy(), Vp_proc[8, Index, :].copy())) #index, position, velocity
+                        Local_sent [Index, 2] = True
+                        #left of the right
+                        Particle_info_right.append((Index, XY_proc[8, Index,:].copy(), Vp_proc[8, Index,:].copy())) # index, position, velocity
+                        Local_sent[Index, 1] = True
+                    XY_proc[8, Index, :] = [0, 0] #set the local to 00 
+                    Vp_proc[8, Index, :] = [0, 0] # set the local back to 00
+                    Index_par_local.pop(par)#remove from the particle index list
+                    Index_par_local_set.discard(Index)
+                if (Local_up == L_total[1] and 2 in wall): 
+                    XY_proc[8, Index, 1] = XY_proc[8, Index, 1] - (XY_proc[8, Index, 1] - Local_up)  #set the position to the changed position after impact
+                    Vp_proc[8, Index, 1] = - Vp_proc[8, Index, 1] #reverse the speed in the x direction
+                if (Local_right == L_total[0] and 0 in wall):
+                    XY_proc[8, Index, 0] = XY_proc[8, Index, 0] - (XY_proc[8, Index, 0] - Local_up)  #set the position to the changed position after impact
+                    Vp_proc[8, Index, 0] = - Vp_proc[8, Index, 0] #reverse the speed in the y direction
+                    
             #local to down right
             elif Position_x >= Local_right and Local_ghost_down <= Position_y < Local_down:
-                #particle enters the ghost down right area
-                Index_par_ghost_down_right.append(Index)#add the index to the end of the list
-                Index_par_ghost_down_right_set.add(Index)
-                XY_proc[5, Index, :] = XY_proc[8, Index, :].copy()#associate the updated local position with the ghost
-                Vp_proc[5, Index, :] = Vp_proc[8, Index, :].copy() #local speed => ghost speed for now( no collisions)
-                if Local_sent[Index, 5] == False:
-                    print("saved a particle", XY_proc[8, Index,:].copy())
-                    #enters the up left ghost of the down right proc but also the up of the down and the left of the right
-                    Particle_info_down_right.append((Index, XY_proc[8, Index, :].copy(), Vp_proc[8, Index, :].copy()))
-                    Local_sent[Index, 5] = True
-                    #up of the down
-                    Particle_info_down.append((Index, XY_proc[8, Index, :].copy(), Vp_proc[8, Index, :].copy())) #index, position, velocity
-                    Local_sent [Index, 3] = True
-                    #left of the right
-                    Particle_info_right.append((Index, XY_proc[8, Index,:].copy(), Vp_proc[8, Index,:].copy())) # index, position, velocity
-                    Local_sent[Index, 1] = True
-                XY_proc[8, Index, :] = [0, 0] #set the local to 00 
-                Vp_proc[8, Index, :] = [0, 0] # set the local back to 00
-                Index_par_local.pop(par)#remove from the particle index list
-                Index_par_local_set.discard(Index)
+                #if down and right are a wall then change the position and velocity if not then pass it on to the down right ghost 
+                if (Local_down != 0 or 3 not in wall) and (Local_right != L_total[0] or 0 not in wall):
+                    #particle enters the ghost down right area
+                    Index_par_ghost_down_right.append(Index)#add the index to the end of the list
+                    Index_par_ghost_down_right_set.add(Index)
+                    XY_proc[5, Index, :] = XY_proc[8, Index, :].copy()#associate the updated local position with the ghost
+                    Vp_proc[5, Index, :] = Vp_proc[8, Index, :].copy() #local speed => ghost speed for now( no collisions)
+                    if Local_sent[Index, 5] == False:
+                        print("saved a particle", XY_proc[8, Index,:].copy())
+                        #enters the up left ghost of the down right proc but also the up of the down and the left of the right
+                        Particle_info_down_right.append((Index, XY_proc[8, Index, :].copy(), Vp_proc[8, Index, :].copy()))
+                        Local_sent[Index, 5] = True
+                        #up of the down
+                        Particle_info_down.append((Index, XY_proc[8, Index, :].copy(), Vp_proc[8, Index, :].copy())) #index, position, velocity
+                        Local_sent [Index, 3] = True
+                        #left of the right
+                        Particle_info_right.append((Index, XY_proc[8, Index,:].copy(), Vp_proc[8, Index,:].copy())) # index, position, velocity
+                        Local_sent[Index, 1] = True
+                    XY_proc[8, Index, :] = [0, 0] #set the local to 00 
+                    Vp_proc[8, Index, :] = [0, 0] # set the local back to 00
+                    Index_par_local.pop(par)#remove from the particle index list
+                    Index_par_local_set.discard(Index)
+                if (Local_down == 0 and 3 in wall): #only the right bounces
+                    XY_proc[8, Index, 1] = XY_proc[8, Index, 1] - (XY_proc[8, Index, 1] - Local_up)  #set the position to the changed position after impact
+                    Vp_proc[8, Index, 1] = - Vp_proc[8, Index, 1] #reverse the speed in the x direction
+                if (Local_right == L_total[0] and 0 in wall):
+                    XY_proc[8, Index, 0] = XY_proc[8, Index, 0] - (XY_proc[8, Index, 0] - Local_up)  #set the position to the changed position after impact
+                    Vp_proc[8, Index, 0] = - Vp_proc[8, Index, 0] #reverse the speed in the y direction
             #local to down left
             elif (Local_ghost_left <= Position_x < Local_left and Local_ghost_down <= Position_y < Local_down):
-                #particle enters the down left area
-                Index_par_ghost_down_left.append(Index)#add the index to the end of the list
-                Index_par_ghost_down_left_set.add(Index)
-                XY_proc[6, Index, :] = XY_proc[8, Index, :].copy()#associate the updated local position with the ghost
-                Vp_proc[6, Index, :] = Vp_proc[8, Index, :].copy() #local speed => ghost speed for now( no collisions)
-                if Local_sent[Index, 6] == False:
-                    print("saved a particle", XY_proc[8, Index,:].copy())
-                    #enters the up right ghost of the down left particle but also in the up of the down and the right of the left
-                    Particle_info_down_left.append((Index, XY_proc[8, Index, :].copy(), Vp_proc[8, Index, :].copy()))
-                    Local_sent[Index, 6] = True
-                    #up of the down
-                    Particle_info_down.append((Index, XY_proc[8, Index, :].copy(), Vp_proc[8, Index, :].copy())) #index, position, velocity
-                    Local_sent [Index, 3] = True
-                    #right of the left
-                    Particle_info_left.append((Index, XY_proc[8, Index,:].copy(), Vp_proc[8, Index,:].copy())) # index, Position, velocity
-                    Local_sent[Index,0] = True
-                XY_proc[8, Index, :] = [0, 0] #set the local to 00 
-                Vp_proc[8, Index, :] = [0, 0] # set the local back to 00
-                Index_par_local.pop(par)#remove from the particle index list
-                Index_par_local_set.discard(Index)
+                #if down and left are a wall then change the position and velocity if not then pass it on to the down left ghost 
+                if (Local_down != 0 or 3 not in wall) and (Local_left != 0 or 1 not in wall):
+                    #particle enters the down left area
+                    Index_par_ghost_down_left.append(Index)#add the index to the end of the list
+                    Index_par_ghost_down_left_set.add(Index)
+                    XY_proc[6, Index, :] = XY_proc[8, Index, :].copy()#associate the updated local position with the ghost
+                    Vp_proc[6, Index, :] = Vp_proc[8, Index, :].copy() #local speed => ghost speed for now( no collisions)
+                    if Local_sent[Index, 6] == False:
+                        print("saved a particle", XY_proc[8, Index,:].copy())
+                        #enters the up right ghost of the down left particle but also in the up of the down and the right of the left
+                        Particle_info_down_left.append((Index, XY_proc[8, Index, :].copy(), Vp_proc[8, Index, :].copy()))
+                        Local_sent[Index, 6] = True
+                        #up of the down
+                        Particle_info_down.append((Index, XY_proc[8, Index, :].copy(), Vp_proc[8, Index, :].copy())) #index, position, velocity
+                        Local_sent [Index, 3] = True
+                        #right of the left
+                        Particle_info_left.append((Index, XY_proc[8, Index,:].copy(), Vp_proc[8, Index,:].copy())) # index, Position, velocity
+                        Local_sent[Index,0] = True
+                    XY_proc[8, Index, :] = [0, 0] #set the local to 00 
+                    Vp_proc[8, Index, :] = [0, 0] # set the local back to 00
+                    Index_par_local.pop(par)#remove from the particle index list
+                    Index_par_local_set.discard(Index)
+                if (Local_down == 0 and 3 in wall):
+                    XY_proc[8, Index, 1] = XY_proc[8, Index, 1] - (XY_proc[8, Index, 1] - Local_up)  #set the position to the changed position after impact
+                    Vp_proc[8, Index, 1] = - Vp_proc[8, Index, 1] #reverse the speed in the y direction
+                if (Local_left == 0 and 1 in wall) :
+                    XY_proc[8, Index, 0] = XY_proc[8, Index, 0] - (XY_proc[8, Index, 0] - Local_up)  #set the position to the changed position after impact
+                    Vp_proc[8, Index, 0] = - Vp_proc[8, Index, 0] #reverse the speed in the x direction
             #local to up left
             elif (Local_ghost_left <= Position_x < Local_left and Local_up <= Position_y <= Local_ghost_up):
-                #particle enters the up left area
-                Index_par_ghost_up_left.append(Index)#add the index to the end of the list
-                Index_par_ghost_up_left_set.add(Index)
-                XY_proc[7, Index, :] = XY_proc[8, Index, :].copy()#associate the updated local position with the ghost
-                Vp_proc[7, Index, :] = Vp_proc[8, Index, :].copy() #local speed => ghost speed for now( no collisions)
-                if Local_sent[Index, 7] == False:
-                    print("saved a particle", XY_proc[8, Index,:].copy())
-                    #enters the down right ghost of the up left particle but also down of ht ep and right of the left
-                    Particle_info_up_left.append((Index, XY_proc[8, Index, :].copy(), Vp_proc[8, Index, :].copy()))
-                    Local_sent[Index, 7] = True
-                    #down of the up 
-                    Particle_info_up.append((Index, XY_proc[8, Index, :].copy(), Vp_proc[8, Index, :].copy())) #index, position, velocity
-                    Local_sent [Index, 2] = True
-                    #right of the left
-                    Particle_info_left.append((Index, XY_proc[8, Index,:].copy(), Vp_proc[8, Index,:].copy())) # index, Position, velocity
-                    Local_sent[Index,0] = True
-                XY_proc[8,Index, :] = [0, 0] #set the local to 00 
-                Vp_proc[8, Index, :] = [0, 0] # set the local back to 00
-                Index_par_local.pop(par)#remove from the particle index list
-                Index_par_local_set.discard(Index)
-            
+                #if up and left are a wall then change the position and velocity if not then pass it on to the up left ghost 
+                if (Local_up != L_total[1] or 2 not in wall) and (Local_left != 0 or 1 not in wall):
+                    #particle enters the up left area
+                    Index_par_ghost_up_left.append(Index)#add the index to the end of the list
+                    Index_par_ghost_up_left_set.add(Index)
+                    XY_proc[7, Index, :] = XY_proc[8, Index, :].copy()#associate the updated local position with the ghost
+                    Vp_proc[7, Index, :] = Vp_proc[8, Index, :].copy() #local speed => ghost speed for now( no collisions)
+                    if Local_sent[Index, 7] == False:
+                        print("saved a particle", XY_proc[8, Index,:].copy())
+                        #enters the down right ghost of the up left particle but also down of ht ep and right of the left
+                        Particle_info_up_left.append((Index, XY_proc[8, Index, :].copy(), Vp_proc[8, Index, :].copy()))
+                        Local_sent[Index, 7] = True
+                        #down of the up 
+                        Particle_info_up.append((Index, XY_proc[8, Index, :].copy(), Vp_proc[8, Index, :].copy())) #index, position, velocity
+                        Local_sent [Index, 2] = True
+                        #right of the left
+                        Particle_info_left.append((Index, XY_proc[8, Index,:].copy(), Vp_proc[8, Index,:].copy())) # index, Position, velocity
+                        Local_sent[Index,0] = True
+                    XY_proc[8,Index, :] = [0, 0] #set the local to 00 
+                    Vp_proc[8, Index, :] = [0, 0] # set the local back to 00
+                    Index_par_local.pop(par)#remove from the particle index list
+                    Index_par_local_set.discard(Index)
+                if Local_up == L_total[1] and 2 in wall:
+                    XY_proc[8, Index, 1] = XY_proc[8, Index, 1] - (XY_proc[8, Index, 1] - Local_up)  #set the position to the changed position after impact
+                    Vp_proc[8, Index, 1] = - Vp_proc[8, Index, 1] #reverse the speed in the y direction
+                if Local_left == 0 or 1 in wall:
+                    XY_proc[8, Index, 0] = XY_proc[8, Index, 0] - (XY_proc[8, Index, 0] - Local_up)  #set the position to the changed position after impact
+                    Vp_proc[8, Index, 0] = - Vp_proc[8, Index, 0] #reverse the speed in the x direction
+                    
             #we are reseting the booleans at the end to ensure that the other conditions are viewed    
             if ((Position_x < (Local_right - Buffer_zone_width[0]) or Position_x >= Local_right or Position_y >= Local_up or Position_y < Local_down) and Local_sent[Index, 0]): #if it leaves on the other side back to false
                 #print("The particule has left the proc")
