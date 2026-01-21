@@ -1,0 +1,37 @@
+import numpy as np
+import matplotlib.pyplot as plt
+
+# parameters
+dt = 0.01
+N = 5000
+
+tau = 1.0                 # relaxation time
+U_q = np.array([-1.0, 1]) # downstream mean velocity
+B = 0.5                   # noise intensity
+
+# arrays
+X = np.zeros((N, 2))  # position
+U = np.zeros((N, 2))  # velocity
+
+# time stepping
+for n in range(N-1):
+    xi = np.random.randn(2)  # Gaussian noise
+
+    # OU update for velocity
+    U[n+1] = (
+        U[n]
+        - (dt / tau) * (U[n] - U_q)
+        + np.sqrt(B * dt) * xi
+    )
+
+    # position update
+    X[n+1] = X[n] + U[n+1] * dt
+
+# plot trajectory
+plt.plot(X[:,0], X[:,1])
+plt.scatter(X[0,0], X[0,1], c='green', label='start')
+plt.scatter(X[-1,0], X[-1,1], c='red', label='end')
+plt.axis('equal')
+plt.legend()
+plt.title("2D OU Velocity + Position")
+plt.show()

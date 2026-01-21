@@ -1,0 +1,26 @@
+import numpy as np
+import matplotlib.pyplot as plt
+
+# parameters
+D = 1.0        # diffusion coefficient
+dt = 0.01
+N = 5000
+
+# arrays
+x = np.zeros(N)
+y = np.zeros(N)
+
+# time stepping
+for n in range(N-1):
+    xi = np.random.randn(2)  # N(0,1) for x and y
+    x[n+1] = x[n] + np.sqrt(2*D*dt) * xi[0]
+    y[n+1] = y[n] + np.sqrt(2*D*dt) * xi[1]
+
+# plot trajectory
+plt.plot(x, y, lw=1)
+plt.scatter(x[0], y[0], c='green', label='start')
+plt.scatter(x[-1], y[-1], c='red', label='end')
+plt.axis('equal')
+plt.legend()
+plt.title("2D Brownian Motion")
+plt.show()
