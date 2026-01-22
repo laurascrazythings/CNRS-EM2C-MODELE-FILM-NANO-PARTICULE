@@ -74,7 +74,7 @@ def narrow_detect(Particle_test_pair, dt_left, Vp_stack, XY_stack):
         return None, None
     
 #3 the third function is the update 
-def update_particles(XY_stack, Vp_stack, Colliding_pair, t_collision, Added_par):
+def update_particles(XY_stack, Vp_stack, Colliding_pair, t_collision, Added_par, Radius_particle, Mass_particle):
     """
     update the particle velocity and its position at contact
     Args:
@@ -82,23 +82,29 @@ def update_particles(XY_stack, Vp_stack, Colliding_pair, t_collision, Added_par)
         t_collision: float: time of collision
         XY_proc: array of size 9* Number of particles and 2 dimensions: position of the particle
         Vp_proc: array of size 9* Number of particles and 2 dimensions: velocity of the particle
-        
+        Added_par: array of size Number of particles and 1 dimensions: now if the particle is "sent" yet.
     Returns:
         XY_stack: array of size 9*Number of particles and 2 dimensions: position of the particle updated
         Vp_stack: array of size 9* Number of particles and 2 dimensions: velocity of the particle
     """
+    #calculate the coefficient of restitution - from the litterature I found that it was e = (d/0.15) * - 0,88 + 0.78. I am going to use this for now
+    e = (((2 * Radius_particle *10**(-6))/0.15) * (-0.88)) + 0.78
+    u_0 = Vp_stack[Colliding_pair[0], :].copy()
+    u_1 = Vp_stack[Colliding_pair[1], :].copy()
 
     #update the position of the colliding particles
     XY_stack = XY_stack+ Vp_stack * t_collision * np.tile(Added_par[:,None], (9, 1)) #update all of the particles and then later change the one which collided
-    XY_stack[Colliding_pair[0] , :] = XY_stack[Colliding_pair[0] , :] + Vp_stack[Colliding_pair[0], :] * t_collision
-    XY_stack[Colliding_pair[1] , :] = XY_stack[Colliding_pair[1] , :] + Vp_stack[Colliding_pair[1], :] * t_collision
+    XY_stack[Colliding_pair[0] , :] = XY_stack[Colliding_pair[0] , :] + u_0 * t_collision
+    XY_stack[Colliding_pair[1] , :] = XY_stack[Colliding_pair[1] , :] + u_1 * t_collision
     #Update the velocities of the particles
     distance_particles = XY_stack[Colliding_pair[0] , :] - XY_stack[Colliding_pair[1] , :] #distance vector of the particles
-    dv = Vp_stack[Colliding_pair[0], :] - Vp_stack[Colliding_pair[1], :] #relative speed
+    dv = u_0 - u_1 #relative speed
     projected_distance = distance_particles @ distance_particles #||C1 - C2 ||^2
     if projected_distance > 1e-12:
-        Vp_stack[Colliding_pair[0], :] = Vp_stack[Colliding_pair[0], :] - ((dv @ distance_particles) / projected_distance) * distance_particles
-        Vp_stack[Colliding_pair[1], :] = Vp_stack[Colliding_pair[1], :] + ((dv @ distance_particles) / projected_distance) * distance_particles
+        Vp_stack[Colliding_pair[0], :] = (e * Mass_particle * (u_1 - u_0) + Mass_particle * u_0 + Mass_particle * u_1)/ (Mass_particle + Mass_particle)
+        Vp_stack[Colliding_pair[1], :] = (e * Mass_particle * (u_0 - u_1) + Mass_particle * u_0 + Mass_particle * u_1)/ (Mass_particle + Mass_particle)
+        #Vp_stack[Colliding_pair[0], :] = Vp_stack[Colliding_pair[0], :] - ((dv @ distance_particles) / projected_distance) * distance_particles
+        #Vp_stack[Colliding_pair[1], :] = Vp_stack[Colliding_pair[1], :] + ((dv @ distance_particles) / projected_distance) * distance_particles
     return XY_stack, Vp_stack
 
 #SCRIPT
@@ -127,7 +133,7 @@ plt.clf()
 #USER INIT
 #time - TO SET
 position = 0 #0 for auto and 1 for manual choice
-T = 10 # seconds to change - HERE
+T = 40 # seconds to change - HERE
 T_add_particles = 0.5 #time for which I add particles for - HERE
 dt = 0.05 #delta t 
 # save animation as a GIF? - To SET 
@@ -135,9 +141,10 @@ save_gif_animation = True
 #Mesh - TO SET
 L_total = np.array([20, 20]) #Total Size in microm - HERE
 #Particles - TO SET
-Num_Particules = 500 #particles to start - HERE
-Num_Particules_dt= 1 #particls added per second - HERE
-Radius_particle = 0.01 #radius of the particule
+Num_Particules = 100 #particles to start - HERE
+Num_Particules_dt= 0 #particls added per second - HERE
+Radius_particle = 0.1 #radius of the particule
+Mass_particle = 79.9 # we can put the molecular mass in g/mol because we are only using this value for ratio calculation
 Highest_velocity = 1 #velocity of the particle
 Lowest_velocity = 0.01
 Lowest_x_velocity = -1
@@ -383,7 +390,7 @@ for t in range(1, Nt+ 1):
                     idx = np.argmin(t_collisions)
                     First_collision = Colliding_pairs[idx]#first colliding pair
                     t_collision = t_collisions[idx] #time fo first collision
-                    XY_stack, Vp_stack = update_particles(XY_stack, Vp_stack, First_collision, t_collision, Added_par)
+                    XY_stack, Vp_stack = update_particles(XY_stack, Vp_stack, First_collision, t_collision, Added_par, Radius_particle, Mass_particle)
                     dt_left = dt_left - t_collision
                 else:
                     XY_stack = XY_stack + Vp_stack * dt_left * Added_par_stack
@@ -795,7 +802,7 @@ for t in range(1, Nt+ 1):
                 Particle_info_up.append((Index, XY_proc[8, Index, :].copy(), Vp_proc[8, Index, :].copy())) #index, position, velocity
                 Local_sent [Index, 2] = True
             #down
-            elif (Local_down <= Position_y <= (Local_down + Buffer_zone_width[1]) and (Local_left + Buffer_zone_width[0]) <= Position_x < (Local_right - Buffer_zone_width[0]) and not(Local_up == 0 and 3 in wall)): 
+            elif (Local_down <= Position_y <= (Local_down + Buffer_zone_width[1]) and (Local_left + Buffer_zone_width[0]) <= Position_x < (Local_right - Buffer_zone_width[0]) and not(Local_down == 0 and 3 in wall)): 
                 #the particle has entered the up ghost zone of the down particle
                 Particle_info_down.append((Index, XY_proc[8, Index, :].copy(), Vp_proc[8, Index, :].copy())) #index, position, velocity
                 Local_sent [Index, 3] = True
@@ -812,7 +819,7 @@ for t in range(1, Nt+ 1):
                 Particle_info_right.append((Index, XY_proc[8, Index,:].copy(), Vp_proc[8, Index,:].copy())) # index, position, velocity
                 Local_sent[Index, 1] = True   
             #down-right
-            elif (Local_down <= Position_y < (Local_down + Buffer_zone_width[1]) and Local_right > Position_x >= (Local_right - Buffer_zone_width[0]) and not(Local_right == L_total[0] and 0 in wall) and not(Local_up == 0 and 3 in wall)): 
+            elif (Local_down <= Position_y < (Local_down + Buffer_zone_width[1]) and Local_right > Position_x >= (Local_right - Buffer_zone_width[0]) and not(Local_right == L_total[0] and 0 in wall) and not(Local_down == 0 and 3 in wall)): 
                 #enters the up left ghost of the down right proc but also the up of the down and the left of the right
                 Particle_info_down_right.append((Index, XY_proc[8, Index, :].copy(), Vp_proc[8, Index, :].copy()))
                 Local_sent[Index, 5] = True
@@ -823,7 +830,7 @@ for t in range(1, Nt+ 1):
                 Particle_info_right.append((Index, XY_proc[8, Index,:].copy(), Vp_proc[8, Index,:].copy())) # index, position, velocity
                 Local_sent[Index, 1] = True
             #down-left
-            elif (Local_down < Position_y < (Local_down + Buffer_zone_width[1]) and Local_left < Position_x <= (Local_left + Buffer_zone_width[0]) and not(Local_left == 0 and 1 in wall) and not(Local_up == 0 and 3 in wall)):
+            elif (Local_down < Position_y < (Local_down + Buffer_zone_width[1]) and Local_left < Position_x <= (Local_left + Buffer_zone_width[0]) and not(Local_left == 0 and 1 in wall) and not(Local_down == 0 and 3 in wall)):
                 #enters the up right ghost of the down left particle but also in the up of the down and the right of the left
                 Particle_info_down_left.append((Index, XY_proc[8, Index, :].copy(), Vp_proc[8, Index, :].copy()))
                 Local_sent[Index, 6] = True
@@ -857,7 +864,7 @@ for t in range(1, Nt+ 1):
                     XY_proc[0, Index,:] = XY_proc[8, Index, :].copy() #associate the local Position with the ghost         
                     Vp_proc[0, Index, :] = Vp_proc[8, Index, :].copy() #associate the local speed with the ghost 
                     if Local_sent[Index, 0] == False:
-                        print("saved a particle", XY_proc[8, Index,:].copy())
+                        print("saved a particle", XY_proc[8, Index,:].copy()) #saved a particle that changed direction while being in the boundary area
                         Particle_info_right.append((Index, XY_proc[8, Index,:].copy(), Vp_proc[8, Index,:].copy())) # index, Position, velocity
                         Local_sent[Index,0] = True
                     XY_proc[8, Index, :] = [0, 0] #set the local to 00 
@@ -925,7 +932,7 @@ for t in range(1, Nt+ 1):
                     Index_par_local.pop(par)#remove from the particle index list
                     Index_par_local_set.discard(Index)
                 else:
-                    XY_proc[8, Index, 1] = XY_proc[8, Index, 1] - (XY_proc[8, Index, 1] - Local_up)  #set the position to the changed position after impact
+                    XY_proc[8, Index, 1] = XY_proc[8, Index, 1] - (XY_proc[8, Index, 1] - Local_down)  #set the position to the changed position after impact
                     Vp_proc[8, Index, 1] = - Vp_proc[8, Index, 1] #reverse the speed in the y direction
             #local to up right    
             elif Position_x >= Local_right and Local_up <= Position_y <= Local_ghost_up:
@@ -982,7 +989,7 @@ for t in range(1, Nt+ 1):
                     Index_par_local.pop(par)#remove from the particle index list
                     Index_par_local_set.discard(Index)
                 if (Local_down == 0 and 3 in wall): #only the right bounces
-                    XY_proc[8, Index, 1] = XY_proc[8, Index, 1] - (XY_proc[8, Index, 1] - Local_up)  #set the position to the changed position after impact
+                    XY_proc[8, Index, 1] = XY_proc[8, Index, 1] - (XY_proc[8, Index, 1] - Local_down)  #set the position to the changed position after impact
                     Vp_proc[8, Index, 1] = - Vp_proc[8, Index, 1] #reverse the speed in the x direction
                 if (Local_right == L_total[0] and 0 in wall):
                     XY_proc[8, Index, 0] = XY_proc[8, Index, 0] - (XY_proc[8, Index, 0] - Local_up)  #set the position to the changed position after impact
@@ -1012,7 +1019,7 @@ for t in range(1, Nt+ 1):
                     Index_par_local.pop(par)#remove from the particle index list
                     Index_par_local_set.discard(Index)
                 if (Local_down == 0 and 3 in wall):
-                    XY_proc[8, Index, 1] = XY_proc[8, Index, 1] - (XY_proc[8, Index, 1] - Local_up)  #set the position to the changed position after impact
+                    XY_proc[8, Index, 1] = XY_proc[8, Index, 1] - (XY_proc[8, Index, 1] - Local_down)  #set the position to the changed position after impact
                     Vp_proc[8, Index, 1] = - Vp_proc[8, Index, 1] #reverse the speed in the y direction
                 if (Local_left == 0 and 1 in wall) :
                     XY_proc[8, Index, 0] = XY_proc[8, Index, 0] - (XY_proc[8, Index, 0] - Local_up)  #set the position to the changed position after impact
@@ -1363,7 +1370,6 @@ if rank == 0:
        
 MPI.Finalize # stop the parallelization
 
-#check that all particles are still there
 
 
 
