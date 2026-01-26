@@ -141,7 +141,7 @@ def update_particles_collision(XY_stack, Vp_stack, Colliding_pair, t_collision, 
         Vp_stack[Colliding_pair[1], :] = (e * Mass_particle[relative_index[0]] * (u_0 - u_1) + Mass_particle[relative_index[0]] * u_0 + Mass_particle[relative_index[1]] * u_1)/ (Mass_particle[relative_index[0]] + Mass_particle[relative_index[1]])
     return XY_stack, Vp_stack
 
-def update_particles_aggregation(XY_stack, Vp_stack, Colliding_pair, t_collision, Added_par, Radius_particle, Mass_particle, Num_Particules_end, Molar_mass, Cg):
+def update_particles_aggregation(XY_stack, Vp_stack, Colliding_pair, t_collision, Added_par, Radius_particle, Num_Particules_end, Mass_particles, Cg_proc):
     """
     update the particle and its characteristics if the particles are agglomerating
     Args:
@@ -153,8 +153,8 @@ def update_particles_aggregation(XY_stack, Vp_stack, Colliding_pair, t_collision
     relative_index[0] = Colliding_pair[0] % (Num_Particules_end)
     relative_index[1] = Colliding_pair[1] % (Num_Particules_end)
     i, j = relative_index
-    Cgi = Cg[i] #center of gravity of the first aggregate
-    Cgj = Cg[j] #center of gravity of the second aggregate
+    Cgi = Cg_proc[i] #center of gravity of the first aggregate
+    Cgj = Cg_proc[j] #center of gravity of the second aggregate
     numi = len(Aggregate_set[i]) #number of particles in the frist aggregate
     if numi == 0:
         numi = 1 #if the set is empty, there is the particle itself.
@@ -174,36 +174,24 @@ def update_particles_aggregation(XY_stack, Vp_stack, Colliding_pair, t_collision
     merge = set(Aggregate_set[i]) #create a set that we populate and then use to replace the old set. easier
     merge.update(Aggregate_set[j])
     merge.update([i, j])
-    cg_update = (Cgi * numi * Molar_mass + Cgj * numj * Molar_mass) / (numi * Molar_mass + numj * Molar_mass)
-    V_new = (u_i * numi * Molar_mass + u_j * numj * Molar_mass) / (numi * Molar_mass + numj * Molar_mass)
+    cg_update = (Cgi * numi * Mass_particles[0]+ Cgj * numj * Mass_particles[0]) / (numi * Mass_particles[0] + numj * Mass_particles[0])
+    V_new = (u_i * numi * Mass_particles[0] + u_j * numj * Mass_particles[0]) / (numi * Mass_particles[0] + numj * Mass_particles[0])
     
     for k in merge:
         Aggregate_set[k] = merge
         Cg_proc[k] = cg_update
         zone = zone_index(k)
-        Vp_stack[zone * Num_Particules_end - 1, :] =  # average the velocity after impact
-#velocity to update for how do we update the stck if the vales arent the stacked ones?
-    
-    
+        Vp_stack[zone * Num_Particules_end - 1, :] = V_new # average the velocity after impact? missing the e?
+   
         
-        
-    Mass_particle[relative_index[0]] = Mass_particle[relative_index[0]] + Mass_particle[relative_index[1]]
-    distance_particles = XY_stack[Colliding_pair[0] , :] - XY_stack[Colliding_pair[1] , :] #distance vector of the particles
-    dv = u_i - u_j #relative speed
-    projected_distance = distance_particles @ distance_particles #||C1 - C2 ||^2
-    if projected_distance > 1e-12:
-        u_i = (e * Mass_particle[relative_index[1]] * (u_j - u_i) + Mass_particle[relative_index[0]] * u_i + Mass_particle[relative_index[1]] * u_j)/ (Mass_particle[relative_index[0]] + Mass_particle[relative_index[1]])
-        u_j = (e * Mass_particle[relative_index[0]] * (u_i - u_j) + Mass_particle[relative_index[0]] * u_i + Mass_particle[relative_index[1]] * u_j)/ (Mass_particle[relative_index[0]] + Mass_particle[relative_index[1]])
-        
-        
-    return XY_stack, Vp_stack
+    return XY_stack, Vp_stack, Cg_proc, Aggregate_set
     
     
  
 
 def interactions():
     """
-    Docstring for interactions
+    find if the particles are aggregating or colliding
     """
     # if xxxx:
     #     Xy_stack, Vp_stack = update_particles_collision
@@ -248,6 +236,7 @@ L_total = np.array([20, 20]) #Total Size in microm - HERE
 Num_Particules = 100 #particles to start - HERE
 Num_Particules_dt= 0 #particls added per second - HERE
 Radius_molecule = 0.01 #radius of the particule
+density = 4500000 #g/m3
 Molar_mass = 79.9 # we can put the molecular mass in g/mol because we are only using this value for ratio calculation
 Highest_velocity = 1 #velocity of the particle
 Lowest_velocity = 0.01
@@ -270,7 +259,8 @@ Num_Particules_start = Num_Particules
 Num_Particules_end = int(Num_Particules +  Num_Particules_dt * (T_add_particles /dt))
 
 #define the charatcters of the particles
-Mass_particle = np.ones(Num_Particules_end) * Molar_mass
+Volume = 4/3 * np.pi * (Radius_molecule*10**(-6))**3
+Mass_particle = np.ones(Num_Particules_end) * density * Volume * 10^(15)#picograms
 Radius_particle = np.ones(Num_Particules_end) * Radius_molecule
 
 #particules init - DO NOT TOUCH
