@@ -46,7 +46,7 @@ def narrow_detect(Particle_test_pair, dt_left, Vp_stack, XY_stack):
     """
     v = Vp_stack[Particle_test_pair[0], :] - Vp_stack[Particle_test_pair[1], :] #velocity difference
     dif_pos = XY_stack[Particle_test_pair[0], :] - XY_stack[Particle_test_pair[1], :] #difference in position
-    distance_collsion = 2 * Radius_particle #distance underwhich there is a collision, maybe to update later to enable different sizes of particles
+    distance_collsion = Radius_particle[Particle_test_pair[0]] + Radius_particle[Particle_test_pair[1]] #distance underwhich there is a collision, maybe to update later to enable different sizes of particles
     
     a = v @ v #the dot product will be positive if the direction is similar, if opposite it will be close to 0 or negative, meaning that whatever they do they wont cross
     if a < 1e-12:
@@ -74,9 +74,9 @@ def narrow_detect(Particle_test_pair, dt_left, Vp_stack, XY_stack):
         return None, None
     
 #3 the third function is the update 
-def update_particles(XY_stack, Vp_stack, Colliding_pair, t_collision, Added_par, Radius_particle, Mass_particle):
+def update_particles_collision(XY_stack, Vp_stack, Colliding_pair, t_collision, Added_par, Radius_particle, Mass_particle):
     """
-    update the particle velocity and its position at contact
+    update the particle velocity and its position at contact - collision case
     Args:
         Colliding_pair: Array of 2 particles, of 2 dimensions
         t_collision: float: time of collision
@@ -88,7 +88,7 @@ def update_particles(XY_stack, Vp_stack, Colliding_pair, t_collision, Added_par,
         Vp_stack: array of size 9* Number of particles and 2 dimensions: velocity of the particle
     """
     #calculate the coefficient of restitution - from the litterature I found that it was e = (d/0.15) * - 0,88 + 0.78. I am going to use this for now
-    e = (((2 * Radius_particle *10**(-6))/0.15) * (-0.88)) + 0.78
+    e = ((((Radius_particle[Colliding_pair[0]] + Radius_particle[Colliding_pair[1]]) *10**(-6))/0.15) * (-0.88)) + 0.78
     u_0 = Vp_stack[Colliding_pair[0], :].copy()
     u_1 = Vp_stack[Colliding_pair[1], :].copy()
 
@@ -101,11 +101,11 @@ def update_particles(XY_stack, Vp_stack, Colliding_pair, t_collision, Added_par,
     dv = u_0 - u_1 #relative speed
     projected_distance = distance_particles @ distance_particles #||C1 - C2 ||^2
     if projected_distance > 1e-12:
-        Vp_stack[Colliding_pair[0], :] = (e * Mass_particle * (u_1 - u_0) + Mass_particle * u_0 + Mass_particle * u_1)/ (Mass_particle + Mass_particle)
-        Vp_stack[Colliding_pair[1], :] = (e * Mass_particle * (u_0 - u_1) + Mass_particle * u_0 + Mass_particle * u_1)/ (Mass_particle + Mass_particle)
-        #Vp_stack[Colliding_pair[0], :] = Vp_stack[Colliding_pair[0], :] - ((dv @ distance_particles) / projected_distance) * distance_particles
-        #Vp_stack[Colliding_pair[1], :] = Vp_stack[Colliding_pair[1], :] + ((dv @ distance_particles) / projected_distance) * distance_particles
+        Vp_stack[Colliding_pair[0], :] = (e * Mass_particle[Colliding_pair[1]] * (u_1 - u_0) + Mass_particle[Colliding_pair[0]] * u_0 + Mass_particle[Colliding_pair[1]] * u_1)/ (Mass_particle[Colliding_pair[0]] + Mass_particle[Colliding_pair[1]])
+        Vp_stack[Colliding_pair[1], :] = (e * Mass_particle[Colliding_pair] * (u_0 - u_1) + Mass_particle[Colliding_pair[0]] * u_0 + Mass_particle[Colliding_pair[1]] * u_1)/ (Mass_particle[Colliding_pair[0]] + Mass_particle[Colliding_pair[1]])
     return XY_stack, Vp_stack
+
+# def update_particles_aggregation()
 
 #SCRIPT
 
@@ -136,15 +136,15 @@ position = 0 #0 for auto and 1 for manual choice
 T = 40 # seconds to change - HERE
 T_add_particles = 0.5 #time for which I add particles for - HERE
 dt = 0.05 #delta t 
-# save animation as a GIF? - To SET 
+# save animation as a mp4? - To SET 
 save_gif_animation = True 
 #Mesh - TO SET
 L_total = np.array([20, 20]) #Total Size in microm - HERE
 #Particles - TO SET
 Num_Particules = 100 #particles to start - HERE
 Num_Particules_dt= 0 #particls added per second - HERE
-Radius_particle = 0.1 #radius of the particule
-Mass_particle = 79.9 # we can put the molecular mass in g/mol because we are only using this value for ratio calculation
+Radius_molecule = 0.1 #radius of the particule
+Molar_mass = 79.9 # we can put the molecular mass in g/mol because we are only using this value for ratio calculation
 Highest_velocity = 1 #velocity of the particle
 Lowest_velocity = 0.01
 Lowest_x_velocity = -1
@@ -165,6 +165,9 @@ Px, Py = dimensions_proc #neded to set the lines later
 Num_Particules_start = Num_Particules
 Num_Particules_end = int(Num_Particules +  Num_Particules_dt * (T_add_particles /dt))
 
+#define the charatcters of the particles
+Mass_particle = np.ones(Num_Particules_end) * Molar_mass
+Radius_particle = np.ones(Num_Particules_end) * Radius_molecule
 
 #particules init - DO NOT TOUCH
 if rank == 1 : #do not overload proc 0, need the if so that the rand doesnt run for each proc 
@@ -185,22 +188,21 @@ if rank == 1 : #do not overload proc 0, need the if so that the rand doesnt run 
     maximum_velocity = np.sqrt(np.max(np.abs(Vp[:,0]))**(2) + np.max(np.abs(Vp[:,1]))**(2))
     #The particle can't start in the last bufferzone. it wont be able to be updated, there is only border control no spawn control taking into account the perodical condition
     Buffer_zone_width = np.array([maximum_velocity * dt* 2.01, (maximum_velocity + U_g[1]) * dt * 2.01]) #Buffer depends on the velocity of the particule, more than 2 to ensure that a particule pings twice 
-    Starting_X = round((Buffer_zone_width[0] + Radius_particle)/ (2 * Radius_particle )) #starting possible position
-    Starting_Y = round((Buffer_zone_width[1] + Radius_particle)/ (2 * Radius_particle))
-    num_X = L_total[0] / (2 * Radius_particle) #number of position possible
+    Starting_X = round((Buffer_zone_width[0] + Radius_particle[0])/ (2 * Radius_particle[0] )) #starting possible position
+    Starting_Y = round((Buffer_zone_width[1] + Radius_particle[0])/ (2 * Radius_particle[0]))
+    num_X = L_total[0] / (2 * Radius_particle[0]) #number of position possible
     left_over_x = num_X - int(num_X)
-    num_Y = L_total[1] / (2 * Radius_particle)
+    num_Y = L_total[1] / (2 * Radius_particle[0])
     left_over_y = num_Y - int(num_Y)
     
-    add_num_Y = int(Buffer_zone_width[1] / (2 * Radius_particle))#same but in the buffer or ghost zone really for the additional particles, they are generated at the start
-    
+    add_num_Y = int(Buffer_zone_width[1] / (2 * Radius_particle[0]))#same but in the buffer or ghost zone really for the additional particles, they are generated at the start
     X_possible = np.arange(Starting_X, num_X + 1 - Starting_X) + 0.5 * left_over_x
     Y_possible = np.arange(Starting_Y, num_Y + 1 - Starting_Y) + 0.5 * left_over_y
     Add_Y_possible = np.arange(-add_num_Y, -1)
     X, Y = np.meshgrid(X_possible, Y_possible)
     X_add, Y_add = np.meshgrid(X_possible, Add_Y_possible)
-    possible_position = (((np.stack((X, Y), axis = -1 ) * 2 * Radius_particle) - Radius_particle)  ).reshape(-1, 2)
-    additional_position = (np.stack((X_add, Y_add), axis = -1 ) * 2 * Radius_particle - Radius_particle).reshape(-1, 2)
+    possible_position = (((np.stack((X, Y), axis = -1 ) * 2 * Radius_particle[0]) - Radius_particle[0])  ).reshape(-1, 2)
+    additional_position = (np.stack((X_add, Y_add), axis = -1 ) * 2 * Radius_particle[0] - Radius_particle[0]).reshape(-1, 2)
 
     #for the particles being added through the simulation time, we are going to initiate them at the same tie thant the others for better run time
     #they are going to be stocked where they spawn (at the bottom for now but can easily be changed)
@@ -376,7 +378,7 @@ for t in range(1, Nt+ 1):
         
         
         while dt_left > 0 :
-            d = np.sqrt((np.max(abs(Vp_stack[:,0])))**(2) + (np.max(abs(Vp_stack[:,1])))**(2)) * dt_left * 2 + 2 * Radius_particle # 2* the distance the quickest particle can cover in 1dt
+            d = np.sqrt((np.max(abs(Vp_stack[:,0])))**(2) + (np.max(abs(Vp_stack[:,1])))**(2)) * dt_left * 2 + 2 * Radius_particle[0] # 2* the distance the quickest particle can cover in 1dt
             Particle_test = broad_detect(XY_stack, d) #gets the short list of nearby particles in the whole proc thanks to the stack
             if len(Particle_test) > 0:
                 Colliding_pairs = []
@@ -390,7 +392,7 @@ for t in range(1, Nt+ 1):
                     idx = np.argmin(t_collisions)
                     First_collision = Colliding_pairs[idx]#first colliding pair
                     t_collision = t_collisions[idx] #time fo first collision
-                    XY_stack, Vp_stack = update_particles(XY_stack, Vp_stack, First_collision, t_collision, Added_par, Radius_particle, Mass_particle)
+                    XY_stack, Vp_stack = update_particles_collision(XY_stack, Vp_stack, First_collision, t_collision, Added_par, Radius_particle, Mass_particle)
                     dt_left = dt_left - t_collision
                 else:
                     XY_stack = XY_stack + Vp_stack * dt_left * Added_par_stack
@@ -1313,7 +1315,7 @@ if rank == 0:
     colors[Num_Particules_start:Num_Particules_end] = "red"
     #num particules - start with empty data
     init_pos = XY_master_saved[0, :, :].copy()
-    s = radius_to_s(ax, Radius_particle)
+    s = radius_to_s(ax, Radius_particle[0])
     scat = ax.scatter(init_pos[:,0], init_pos[:,1], s=s, c=colors)
     
     #define the title before
