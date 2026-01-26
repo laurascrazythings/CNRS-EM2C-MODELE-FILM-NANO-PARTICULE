@@ -11,7 +11,33 @@ import time
 from matplotlib.animation import FuncAnimation, FFMpegWriter #animation
 from scipy.spatial import cKDTree #spatial tree to do a broad search
 
-
+def zone_index(k):
+    """
+    from index of particle aggregating returns the zone the particle is in to allow for updating the velocity of the aggregate
+    
+    :param k: Description
+    """
+    if k in Index_par_local_set:
+        zone = 8
+    elif k in Index_par_ghost_right_set:
+        zone = 0
+    elif k in Index_par_ghost_left_set:
+        zone = 1
+    elif k in Index_par_ghost_up_set:
+        zone = 2
+    elif k in Index_par_ghost_down_set:
+        zone = 3
+    elif k in Index_par_ghost_up_right_set:
+        zone = 4
+    elif k in Index_par_ghost_down_right_set:
+        zone = 5
+    elif k in Index_par_ghost_down_left_set:
+        zone = 6
+    elif k in Index_par_ghost_up_right_set:
+        zone = 7
+    else :
+        zone = None
+    return zone
 #functions to detect and solve collisions
 #1 the first function is the broad phase
 def broad_detect(XY, d):
@@ -31,7 +57,7 @@ def broad_detect(XY, d):
     return idx_valid[pairs]
 
 #2 the second function is the narrow phase
-def narrow_detect(Particle_test_pair, dt_left, Vp_stack, XY_stack):
+def narrow_detect(Particle_test_pair, dt_left, Vp_stack, XY_stack, Radius_particle, Num_Particules_end):
     """
     Test the collision of pairs of particles 
     
@@ -44,10 +70,13 @@ def narrow_detect(Particle_test_pair, dt_left, Vp_stack, XY_stack):
         array: Pairs of colliding particle if they collide
         float: time of collision
     """
+    relative_index = np.zeros(2, dtype = int)
+    relative_index[0] = Particle_test_pair[0] % (Num_Particules_end)
+    relative_index[1] = Particle_test_pair[1] % (Num_Particules_end)
+    # The need for relative index comes from the fact that to have smooth collisions, I have stacked all the values of the particles into one array; to ensure I am pulling the right radius values i have to divide the index of the stack by the length of  normal array
     v = Vp_stack[Particle_test_pair[0], :] - Vp_stack[Particle_test_pair[1], :] #velocity difference
     dif_pos = XY_stack[Particle_test_pair[0], :] - XY_stack[Particle_test_pair[1], :] #difference in position
-    distance_collsion = Radius_particle[Particle_test_pair[0]] + Radius_particle[Particle_test_pair[1]] #distance underwhich there is a collision, maybe to update later to enable different sizes of particles
-    
+    distance_collsion = Radius_particle[relative_index[0]] + Radius_particle[relative_index[1]] #distance underwhich there is a collision, maybe to update later to enable different sizes of particles
     a = v @ v #the dot product will be positive if the direction is similar, if opposite it will be close to 0 or negative, meaning that whatever they do they wont cross
     if a < 1e-12:
         return None, None
@@ -74,7 +103,7 @@ def narrow_detect(Particle_test_pair, dt_left, Vp_stack, XY_stack):
         return None, None
     
 #3 the third function is the update 
-def update_particles_collision(XY_stack, Vp_stack, Colliding_pair, t_collision, Added_par, Radius_particle, Mass_particle):
+def update_particles_collision(XY_stack, Vp_stack, Colliding_pair, t_collision, Added_par, Radius_particle, Mass_particle, Num_Particules_end):
     """
     update the particle velocity and its position at contact - collision case
     Args:
@@ -83,29 +112,104 @@ def update_particles_collision(XY_stack, Vp_stack, Colliding_pair, t_collision, 
         XY_proc: array of size 9* Number of particles and 2 dimensions: position of the particle
         Vp_proc: array of size 9* Number of particles and 2 dimensions: velocity of the particle
         Added_par: array of size Number of particles and 1 dimensions: now if the particle is "sent" yet.
+        Radius_particle:
+        Mass_particle:
     Returns:
         XY_stack: array of size 9*Number of particles and 2 dimensions: position of the particle updated
         Vp_stack: array of size 9* Number of particles and 2 dimensions: velocity of the particle
     """
+    relative_index = np.zeros(2, dtype = int)
+    relative_index[0] = Colliding_pair[0] % (Num_Particules_end)
+    relative_index[1] = Colliding_pair[1] % (Num_Particules_end)
+    # The need for relative index comes from the fact that to have smooth collisions, I have stacked all the values of the particles into one array; to ensure I am pulling the right radius values i have to divide the index of the stack by the length of  normal array
+    
     #calculate the coefficient of restitution - from the litterature I found that it was e = (d/0.15) * - 0,88 + 0.78. I am going to use this for now
-    e = ((((Radius_particle[Colliding_pair[0]] + Radius_particle[Colliding_pair[1]]) *10**(-6))/0.15) * (-0.88)) + 0.78
+    e = ((((Radius_particle[relative_index[0]] + Radius_particle[relative_index[1]]) *10**(-6))/0.15) * (-0.88)) + 0.78
     u_0 = Vp_stack[Colliding_pair[0], :].copy()
     u_1 = Vp_stack[Colliding_pair[1], :].copy()
 
     #update the position of the colliding particles
     XY_stack = XY_stack+ Vp_stack * t_collision * np.tile(Added_par[:,None], (9, 1)) #update all of the particles and then later change the one which collided
-    XY_stack[Colliding_pair[0] , :] = XY_stack[Colliding_pair[0] , :] + u_0 * t_collision
-    XY_stack[Colliding_pair[1] , :] = XY_stack[Colliding_pair[1] , :] + u_1 * t_collision
+    XY_stack[Colliding_pair[0] , :] = XY_stack[Colliding_pair[0] , :].copy() + u_0 * t_collision
+    XY_stack[Colliding_pair[1] , :] = XY_stack[Colliding_pair[1] , :].copy() + u_1 * t_collision
     #Update the velocities of the particles
     distance_particles = XY_stack[Colliding_pair[0] , :] - XY_stack[Colliding_pair[1] , :] #distance vector of the particles
     dv = u_0 - u_1 #relative speed
     projected_distance = distance_particles @ distance_particles #||C1 - C2 ||^2
     if projected_distance > 1e-12:
-        Vp_stack[Colliding_pair[0], :] = (e * Mass_particle[Colliding_pair[1]] * (u_1 - u_0) + Mass_particle[Colliding_pair[0]] * u_0 + Mass_particle[Colliding_pair[1]] * u_1)/ (Mass_particle[Colliding_pair[0]] + Mass_particle[Colliding_pair[1]])
-        Vp_stack[Colliding_pair[1], :] = (e * Mass_particle[Colliding_pair] * (u_0 - u_1) + Mass_particle[Colliding_pair[0]] * u_0 + Mass_particle[Colliding_pair[1]] * u_1)/ (Mass_particle[Colliding_pair[0]] + Mass_particle[Colliding_pair[1]])
+        Vp_stack[Colliding_pair[0], :] = (e * Mass_particle[relative_index[1]] * (u_1 - u_0) + Mass_particle[relative_index[0]] * u_0 + Mass_particle[relative_index[1]] * u_1)/ (Mass_particle[relative_index[0]] + Mass_particle[relative_index[1]])
+        Vp_stack[Colliding_pair[1], :] = (e * Mass_particle[relative_index[0]] * (u_0 - u_1) + Mass_particle[relative_index[0]] * u_0 + Mass_particle[relative_index[1]] * u_1)/ (Mass_particle[relative_index[0]] + Mass_particle[relative_index[1]])
     return XY_stack, Vp_stack
 
-# def update_particles_aggregation()
+def update_particles_aggregation(XY_stack, Vp_stack, Colliding_pair, t_collision, Added_par, Radius_particle, Mass_particle, Num_Particules_end, Molar_mass, Cg):
+    """
+    update the particle and its characteristics if the particles are agglomerating
+    Args:
+    
+    Returns:
+
+    """
+    relative_index = np.zeros(2, dtype = int)
+    relative_index[0] = Colliding_pair[0] % (Num_Particules_end)
+    relative_index[1] = Colliding_pair[1] % (Num_Particules_end)
+    i, j = relative_index
+    Cgi = Cg[i] #center of gravity of the first aggregate
+    Cgj = Cg[j] #center of gravity of the second aggregate
+    numi = len(Aggregate_set[i]) #number of particles in the frist aggregate
+    if numi == 0:
+        numi = 1 #if the set is empty, there is the particle itself.
+    numj = len(Aggregate_set[j]) #nmber of particles in the second aggregate
+    if numj == 0:
+        numj = 1 #if the set is empty, there is the particle itself.
+    
+    # The need for relative index comes from the fact that to have smooth collisions, I have stacked all the values of the particles into one array; to ensure I am pulling the right radius values i have to divide the index of the stack by the length of  normal array
+    e = ((((Radius_particle[relative_index[0]] + Radius_particle[relative_index[1]]) *10**(-6))/0.15) * (-0.88)) + 0.78
+    u_i = Vp_stack[Colliding_pair[0], :].copy()
+    u_j = Vp_stack[Colliding_pair[1], :].copy()
+    #update the position of the colliding particles
+    XY_stack = XY_stack+ Vp_stack * t_collision * np.tile(Added_par[:,None], (9, 1)) #update all of the particles and then later change the one which collided
+    XY_stack[Colliding_pair[0] , :] = XY_stack[Colliding_pair[0] , :].copy() + u_i * t_collision
+    XY_stack[Colliding_pair[1] , :] = XY_stack[Colliding_pair[1] , :].copy() + u_j * t_collision
+    #they should now be glued togther?
+    merge = set(Aggregate_set[i]) #create a set that we populate and then use to replace the old set. easier
+    merge.update(Aggregate_set[j])
+    merge.update([i, j])
+    cg_update = (Cgi * numi * Molar_mass + Cgj * numj * Molar_mass) / (numi * Molar_mass + numj * Molar_mass)
+    V_new = (u_i * numi * Molar_mass + u_j * numj * Molar_mass) / (numi * Molar_mass + numj * Molar_mass)
+    
+    for k in merge:
+        Aggregate_set[k] = merge
+        Cg_proc[k] = cg_update
+        zone = zone_index(k)
+        Vp_stack[zone * Num_Particules_end - 1, :] =  # average the velocity after impact
+#velocity to update for how do we update the stck if the vales arent the stacked ones?
+    
+    
+        
+        
+    Mass_particle[relative_index[0]] = Mass_particle[relative_index[0]] + Mass_particle[relative_index[1]]
+    distance_particles = XY_stack[Colliding_pair[0] , :] - XY_stack[Colliding_pair[1] , :] #distance vector of the particles
+    dv = u_i - u_j #relative speed
+    projected_distance = distance_particles @ distance_particles #||C1 - C2 ||^2
+    if projected_distance > 1e-12:
+        u_i = (e * Mass_particle[relative_index[1]] * (u_j - u_i) + Mass_particle[relative_index[0]] * u_i + Mass_particle[relative_index[1]] * u_j)/ (Mass_particle[relative_index[0]] + Mass_particle[relative_index[1]])
+        u_j = (e * Mass_particle[relative_index[0]] * (u_i - u_j) + Mass_particle[relative_index[0]] * u_i + Mass_particle[relative_index[1]] * u_j)/ (Mass_particle[relative_index[0]] + Mass_particle[relative_index[1]])
+        
+        
+    return XY_stack, Vp_stack
+    
+    
+ 
+
+def interactions():
+    """
+    Docstring for interactions
+    """
+    # if xxxx:
+    #     Xy_stack, Vp_stack = update_particles_collision
+    # else:
+    #     update_particles_aggregation
+
 
 #SCRIPT
 
@@ -133,7 +237,7 @@ plt.clf()
 #USER INIT
 #time - TO SET
 position = 0 #0 for auto and 1 for manual choice
-T = 40 # seconds to change - HERE
+T = 20 # seconds to change - HERE
 T_add_particles = 0.5 #time for which I add particles for - HERE
 dt = 0.05 #delta t 
 # save animation as a mp4? - To SET 
@@ -143,7 +247,7 @@ L_total = np.array([20, 20]) #Total Size in microm - HERE
 #Particles - TO SET
 Num_Particules = 100 #particles to start - HERE
 Num_Particules_dt= 0 #particls added per second - HERE
-Radius_molecule = 0.1 #radius of the particule
+Radius_molecule = 0.01 #radius of the particule
 Molar_mass = 79.9 # we can put the molecular mass in g/mol because we are only using this value for ratio calculation
 Highest_velocity = 1 #velocity of the particle
 Lowest_velocity = 0.01
@@ -255,11 +359,11 @@ Local_ghost_down = Local_down - Buffer_zone_width[1] #the ghost zone ends
 
 # Particule position - to change - set to empty for now- pay attention in case some particules have a 00 position and 00 velocity might not work
 XY_proc = np.zeros((9, Num_Particules_end, 2)) #creating a position array to replace the 9 different ones to deal with border collisions
+Cg_proc = np.zeros((9, Num_Particules_end, 2)) #creating a center of gravity that depends on the position f the particles aggregated
 ##[:,0] : right; [:,1]: left; [:,2]: up; [:,3]: down [:,4] : up right; [:,5]: down right; [:,6]: down left; [:,7]: up left; [:. 8]: local
-
 # Particule speeds- set to zeros for now
 Vp_proc = np.zeros((9, Num_Particules_end, 2))
-
+Aggregate_set = [set() for p in range(Num_Particules_end)]
 #setting the particule index key
 #num of particules per processor calculated thanks to len (Index)
 #choice: there are one list and one set having the same value because it is more efficient to search in a set and reduces considerably the runtime 
@@ -292,46 +396,55 @@ for p in range(Num_Particules_end):
         Index_par_local_set.add(p)
         XY_proc[8, p, :]= XY_start[p, :]
         Vp_proc[8, p, :]= Vp[p, :] #movment 
+        Cg_proc[8, p, :] = XY_proc[8, p, :]
     elif Local_ghost_left <= Position_x < Local_left and Local_down <= Position_y < Local_up: #particule in the left ghost
         Index_par_ghost_left.append(p)
         Index_par_ghost_left_set.add(p)
         XY_proc[1, p, :] = XY_start[p, :]
         Vp_proc[1, p, :] = Vp[p, :] #movment 
+        Cg_proc[1, p, :] = XY_proc[1, p, :]
     elif Local_right <= Position_x <= Local_ghost_right and Local_down <= Position_y < Local_up: #particule in the right ghost
         Index_par_ghost_right.append(p)
         Index_par_ghost_right_set.add(p)
         XY_proc[0, p, :] = XY_start[p, :]
         Vp_proc[0, p, :] = Vp[p, :] #movment 
+        Cg_proc[0, p, :] = XY_proc[0, p, :]
     elif Local_left <= Position_x < Local_right and Local_up <= Position_y <= Local_ghost_up: #up ghost 
         Index_par_ghost_up.append(p)
         Index_par_ghost_up_set.add(p)
         XY_proc[2, p, :] = XY_start[p, :]
-        Vp_proc[2, p, :] = Vp[p, :] #movment 
+        Vp_proc[2, p, :] = Vp[p, :] #movment
+        Cg_proc[2, p, :] = XY_proc[2, p, :] 
     elif Local_left <= Position_x < Local_right and Local_ghost_down <= Position_y < Local_down: #down ghost 
         Index_par_ghost_down.append(p)
         Index_par_ghost_down_set.add(p)
         XY_proc[3, p, :] = XY_start[p, :]
-        Vp_proc[3, p, :] = Vp[p, :] #movment 
+        Vp_proc[3, p, :] = Vp[p, :] #movment
+        Cg_proc[3, p, :] = XY_proc[3, p, :]  
     elif Local_right <= Position_x <= Local_ghost_right and Local_up <= Position_y <= Local_ghost_up : #corners up right ghost
         Index_par_ghost_up_right.append(p)
         Index_par_ghost_up_right_set.add(p)
         XY_proc[4, p, :] = XY_start[p, :]
         Vp_proc[4, p, :] = Vp[p, :] #movment 
+        Cg_proc[4, p, :] = XY_proc[4, p, :] 
     elif Local_right <= Position_x <= Local_ghost_right and Local_ghost_down <= Position_y < Local_down : #corners down right ghost
         Index_par_ghost_down_right.append(p)
         Index_par_ghost_down_right_set.add(p)
         XY_proc[5, p, :] = XY_start[p, :]
         Vp_proc[5, p, :] = Vp[p, :] #movment 
+        Cg_proc[5, p, :] = XY_proc[5, p, :] 
     elif Local_ghost_left <= Position_x < Local_left and Local_ghost_down <= Position_y < Local_down : #corners down left ghost
         Index_par_ghost_down_left.append(p)
         Index_par_ghost_down_left_set.add(p)
         XY_proc[6, p, :] = XY_start[p, :]
         Vp_proc[6, p, :] = Vp[p, :] #movment 
+        Cg_proc[6, p, :] = XY_proc[6, p, :] 
     elif Local_ghost_left <= Position_x < Local_left and Local_up <= Position_y <= Local_ghost_up : #corners up left ghost
         Index_par_ghost_up_left.append(p)
         Index_par_ghost_up_left_set.add(p)
         XY_proc[7, p, :] = XY_start[p, :]
         Vp_proc[7, p, :] = Vp[p, :]#movment
+        Cg_proc[7, p, :] = XY_proc[7, p, :] 
     #because of the periodical condition, the ghosts of the borders is actually on the other side, it can cause some distubances in the t =0 because the particle dont fall into any categories    
          
 
@@ -384,7 +497,7 @@ for t in range(1, Nt+ 1):
                 Colliding_pairs = []
                 t_collisions = []
                 for j in range(len(Particle_test)):
-                    Particle_colliding, t_hit = narrow_detect(Particle_test[j,:], dt_left, Vp_stack, XY_stack)
+                    Particle_colliding, t_hit = narrow_detect(Particle_test[j,:], dt_left, Vp_stack, XY_stack, Radius_particle, Num_Particules_end)
                     if t_hit is not None and t_hit >= 0.0 :
                         Colliding_pairs.append(Particle_colliding)
                         t_collisions.append(t_hit)
@@ -392,7 +505,7 @@ for t in range(1, Nt+ 1):
                     idx = np.argmin(t_collisions)
                     First_collision = Colliding_pairs[idx]#first colliding pair
                     t_collision = t_collisions[idx] #time fo first collision
-                    XY_stack, Vp_stack = update_particles_collision(XY_stack, Vp_stack, First_collision, t_collision, Added_par, Radius_particle, Mass_particle)
+                    XY_stack, Vp_stack = update_particles_collision(XY_stack, Vp_stack, First_collision, t_collision, Added_par, Radius_particle, Mass_particle, Num_Particules_end)
                     dt_left = dt_left - t_collision
                 else:
                     XY_stack = XY_stack + Vp_stack * dt_left * Added_par_stack
@@ -865,8 +978,7 @@ for t in range(1, Nt+ 1):
                     Index_par_ghost_right_set.add(Index)        
                     XY_proc[0, Index,:] = XY_proc[8, Index, :].copy() #associate the local Position with the ghost         
                     Vp_proc[0, Index, :] = Vp_proc[8, Index, :].copy() #associate the local speed with the ghost 
-                    if Local_sent[Index, 0] == False:
-                        print("saved a particle", XY_proc[8, Index,:].copy()) #saved a particle that changed direction while being in the boundary area
+                    if Local_sent[Index, 0] == False: #saved a particle that changed direction while being in the boundary area
                         Particle_info_right.append((Index, XY_proc[8, Index,:].copy(), Vp_proc[8, Index,:].copy())) # index, Position, velocity
                         Local_sent[Index,0] = True
                     XY_proc[8, Index, :] = [0, 0] #set the local to 00 
@@ -886,7 +998,6 @@ for t in range(1, Nt+ 1):
                     XY_proc[1, Index,:] = XY_proc[8, Index, :].copy() #associate the local position with the ghost         
                     Vp_proc[1, Index, :] = Vp_proc[8, Index, :].copy() #associate the local speed with the ghost 
                     if Local_sent[Index, 1] == False:
-                        print("saved a particle", XY_proc[8, Index,:].copy())
                         Particle_info_left.append((Index, XY_proc[8, Index,:].copy(), Vp_proc[8, Index,:].copy())) # index, Position, velocity
                         Local_sent[Index,1] = True
                     XY_proc[8, Index, :] = [0, 0] #set the local to 00 
@@ -906,7 +1017,6 @@ for t in range(1, Nt+ 1):
                     XY_proc[2, Index, :] = XY_proc[8, Index, :].copy()#associate the updated local position with the up ghost
                     Vp_proc[2,  Index, :] = Vp_proc[8, Index, :].copy() #local speed => ghost up speed for now( no collisions)
                     if Local_sent[Index, 2] == False:
-                        print("saved a particle", XY_proc[8, Index,:].copy())
                         Particle_info_up.append((Index, XY_proc[8, Index,:].copy(), Vp_proc[8, Index,:].copy())) # index, Position, velocity
                         Local_sent[Index,2] = True
                     XY_proc[8, Index, :] = [0, 0] #set the local to 00 
@@ -926,7 +1036,6 @@ for t in range(1, Nt+ 1):
                     XY_proc[3, Index, :] = XY_proc[8, Index, :].copy()#associate the updated local position with the down ghost
                     Vp_proc[3, Index, :] = Vp_proc[8, Index, :].copy() #local speed => ghost down speed for now( no collisions)
                     if Local_sent[Index, 3] == False:
-                        print("saved a particle", XY_proc[8, Index,:].copy())
                         Particle_info_down.append((Index, XY_proc[8, Index,:].copy(), Vp_proc[8, Index,:].copy())) # index, Position, velocity
                         Local_sent[Index,3] = True
                     XY_proc[8, Index, :] = [0, 0] #set the local to 00 
@@ -946,7 +1055,6 @@ for t in range(1, Nt+ 1):
                     XY_proc[4, Index, :] = XY_proc[8, Index, :].copy()#associate the updated local position with the ghost
                     Vp_proc[4, Index, :] = Vp_proc[8, Index, :].copy() #local speed => ghost speed for now( no collisions)
                     if Local_sent[Index, 4] == False:
-                        print("saved a particle", XY_proc[8, Index,:].copy())
                         Particle_info_up_right.append((Index, XY_proc[8, Index,:].copy(), Vp_proc[8, Index,:].copy())) # index, Position, velocity
                         Local_sent[Index, 4] = True
                         #down of the up
@@ -976,7 +1084,6 @@ for t in range(1, Nt+ 1):
                     XY_proc[5, Index, :] = XY_proc[8, Index, :].copy()#associate the updated local position with the ghost
                     Vp_proc[5, Index, :] = Vp_proc[8, Index, :].copy() #local speed => ghost speed for now( no collisions)
                     if Local_sent[Index, 5] == False:
-                        print("saved a particle", XY_proc[8, Index,:].copy())
                         #enters the up left ghost of the down right proc but also the up of the down and the left of the right
                         Particle_info_down_right.append((Index, XY_proc[8, Index, :].copy(), Vp_proc[8, Index, :].copy()))
                         Local_sent[Index, 5] = True
@@ -1006,7 +1113,6 @@ for t in range(1, Nt+ 1):
                     XY_proc[6, Index, :] = XY_proc[8, Index, :].copy()#associate the updated local position with the ghost
                     Vp_proc[6, Index, :] = Vp_proc[8, Index, :].copy() #local speed => ghost speed for now( no collisions)
                     if Local_sent[Index, 6] == False:
-                        print("saved a particle", XY_proc[8, Index,:].copy())
                         #enters the up right ghost of the down left particle but also in the up of the down and the right of the left
                         Particle_info_down_left.append((Index, XY_proc[8, Index, :].copy(), Vp_proc[8, Index, :].copy()))
                         Local_sent[Index, 6] = True
@@ -1036,7 +1142,6 @@ for t in range(1, Nt+ 1):
                     XY_proc[7, Index, :] = XY_proc[8, Index, :].copy()#associate the updated local position with the ghost
                     Vp_proc[7, Index, :] = Vp_proc[8, Index, :].copy() #local speed => ghost speed for now( no collisions)
                     if Local_sent[Index, 7] == False:
-                        print("saved a particle", XY_proc[8, Index,:].copy())
                         #enters the down right ghost of the up left particle but also down of ht ep and right of the left
                         Particle_info_up_left.append((Index, XY_proc[8, Index, :].copy(), Vp_proc[8, Index, :].copy()))
                         Local_sent[Index, 7] = True
