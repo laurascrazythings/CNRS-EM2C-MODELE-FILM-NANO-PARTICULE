@@ -124,7 +124,7 @@ def update_particles_collision(XY_stack, Vp_stack, Colliding_pair, t_collision, 
     # The need for relative index comes from the fact that to have smooth collisions, I have stacked all the values of the particles into one array; to ensure I am pulling the right radius values i have to divide the index of the stack by the length of  normal array
     
     #calculate the coefficient of restitution - from the litterature I found that it was e = (d/0.15) * - 0,88 + 0.78. I am going to use this for now
-    e = ((((Radius_particle[relative_index[0]] + Radius_particle[relative_index[1]]) *10**(-6))/0.15) * (-0.88)) + 0.78
+    cr = ((((Radius_particle[relative_index[0]] + Radius_particle[relative_index[1]]) *10**(-6))/0.15) * (-0.88)) + 0.78
     u_0 = Vp_stack[Colliding_pair[0], :].copy()
     u_1 = Vp_stack[Colliding_pair[1], :].copy()
 
@@ -137,8 +137,8 @@ def update_particles_collision(XY_stack, Vp_stack, Colliding_pair, t_collision, 
     dv = u_0 - u_1 #relative speed
     projected_distance = distance_particles @ distance_particles #||C1 - C2 ||^2
     if projected_distance > 1e-12:
-        Vp_stack[Colliding_pair[0], :] = (e * Mass_particle[relative_index[1]] * (u_1 - u_0) + Mass_particle[relative_index[0]] * u_0 + Mass_particle[relative_index[1]] * u_1)/ (Mass_particle[relative_index[0]] + Mass_particle[relative_index[1]])
-        Vp_stack[Colliding_pair[1], :] = (e * Mass_particle[relative_index[0]] * (u_0 - u_1) + Mass_particle[relative_index[0]] * u_0 + Mass_particle[relative_index[1]] * u_1)/ (Mass_particle[relative_index[0]] + Mass_particle[relative_index[1]])
+        Vp_stack[Colliding_pair[0], :] = (cr * Mass_particle[relative_index[1]] * (u_1 - u_0) + Mass_particle[relative_index[0]] * u_0 + Mass_particle[relative_index[1]] * u_1)/ (Mass_particle[relative_index[0]] + Mass_particle[relative_index[1]])
+        Vp_stack[Colliding_pair[1], :] = (cr * Mass_particle[relative_index[0]] * (u_0 - u_1) + Mass_particle[relative_index[0]] * u_0 + Mass_particle[relative_index[1]] * u_1)/ (Mass_particle[relative_index[0]] + Mass_particle[relative_index[1]])
     return XY_stack, Vp_stack
 
 def update_particles_aggregation(XY_stack, Vp_stack, Colliding_pair, t_collision, Added_par, Radius_particle, Num_Particules_end, Mass_particles, Cg_proc):
@@ -163,7 +163,7 @@ def update_particles_aggregation(XY_stack, Vp_stack, Colliding_pair, t_collision
         numj = 1 #if the set is empty, there is the particle itself.
     
     # The need for relative index comes from the fact that to have smooth collisions, I have stacked all the values of the particles into one array; to ensure I am pulling the right radius values i have to divide the index of the stack by the length of  normal array
-    e = ((((Radius_particle[relative_index[0]] + Radius_particle[relative_index[1]]) *10**(-6))/0.15) * (-0.88)) + 0.78
+    cr = ((((Radius_particle[relative_index[0]] + Radius_particle[relative_index[1]]) *10**(-6))/0.15) * (-0.88)) + 0.78
     u_i = Vp_stack[Colliding_pair[0], :].copy()
     u_j = Vp_stack[Colliding_pair[1], :].copy()
     #update the position of the colliding particles
@@ -183,7 +183,6 @@ def update_particles_aggregation(XY_stack, Vp_stack, Colliding_pair, t_collision
         zone = zone_index(k)
         Vp_stack[zone * Num_Particules_end - 1, :] = V_new # average the velocity after impact? missing the e?
    
-        
     return XY_stack, Vp_stack, Cg_proc, Aggregate_set
     
     
@@ -224,7 +223,7 @@ plt.clf()
 
 #USER INIT
 #time - TO SET
-position = 0 #0 for auto and 1 for manual choice
+position = 1 #0 for auto and 1 for manual choice
 T = 20 # seconds to change - HERE
 T_add_particles = 0.5 #time for which I add particles for - HERE
 dt = 0.05 #delta t 
@@ -233,7 +232,7 @@ save_gif_animation = True
 #Mesh - TO SET
 L_total = np.array([20, 20]) #Total Size in microm - HERE
 #Particles - TO SET
-Num_Particules = 100 #particles to start - HERE
+Num_Particules = 3 #particles to start - HERE
 Num_Particules_dt= 0 #particls added per second - HERE
 Radius_molecule = 0.01 #radius of the particule
 density = 4500000 #g/m3
@@ -260,7 +259,7 @@ Num_Particules_end = int(Num_Particules +  Num_Particules_dt * (T_add_particles 
 
 #define the charatcters of the particles
 Volume = 4/3 * np.pi * (Radius_molecule*10**(-6))**3
-Mass_particle = np.ones(Num_Particules_end) * density * Volume * 10^(15)#picograms
+Mass_particle = np.ones(Num_Particules_end) * density * Volume * 10**(15)#picograms
 Radius_particle = np.ones(Num_Particules_end) * Radius_molecule
 
 #particules init - DO NOT TOUCH
@@ -273,8 +272,8 @@ if rank == 1 : #do not overload proc 0, need the if so that the rand doesnt run 
         Vp[:Num_Particules, 1] = np.random.uniform(low = Lowest_velocity, high = Highest_velocity, size = Num_Particules)#the particle that start are random in y
         Vp[Num_Particules: Num_Particules_end, 1] = np.random.uniform(low = 0, high = Highest_velocity, size = Num_Particules_end - Num_Particules) #the particle that are added have a y direction that goes in the domain
     elif position == 1:
-        Vp[:, 0] = 0, 0, 1
-        Vp[:, 1] = -0.5, 1, -1
+        Vp[:, 0] = 1, -1, 0.4
+        Vp[:, 1] = 0,0,0
         
     #position rand - position after to ensure that the position the particules can be on arent in the 0 to buffer are where it would not be able to be sent periodically 
     XY_start = np.zeros((Num_Particules_end,2)) #particule start position 
@@ -308,8 +307,8 @@ if rank == 1 : #do not overload proc 0, need the if so that the rand doesnt run 
         XY_start[:Num_Particules,:] = possible_position[np.random.choice(len(possible_position), size = Num_Particules, replace = False)]
         XY_start[Num_Particules:Num_Particules_end, :] = additional_position[np.random.choice(len(additional_position), size = Num_Particules_end - Num_Particules, replace = False)]
     elif position == 1:
-        XY_start[:,0] = 9.7, 9.75, 9.25
-        XY_start[:,1] = 10.5, 9.25, 10.25
+        XY_start[:,0] = 6, 9, 2
+        XY_start[:,1] = 5, 5, 5
         
     #register the transparent particles: the ones that are not displayed yet
     Added_par = np.zeros((Num_Particules_end), dtype = bool) 
