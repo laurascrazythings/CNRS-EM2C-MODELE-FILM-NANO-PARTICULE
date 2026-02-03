@@ -38,7 +38,6 @@ def zone_index(k):
         zone = 7
     else :
         zone = None
-        print("no zone")
     return zone
 
 #functions to detect and solve collisions
@@ -235,7 +234,7 @@ plt.clf()
 #time - TO SET
 
 position = 0 #0 for auto and 1 for manual choice
-T = 20# seconds to change - HERE
+T = 40# seconds to change - HERE
 T_add_particles = 0.5 #time for which I add particles for - HERE
 dt = 0.05 #delta t 
 # save animation as a mp4? - To SET 
@@ -243,7 +242,7 @@ save_gif_animation = True
 #Mesh - TO SET
 L_total = np.array([20, 20]) #Total Size in microm - HERE
 #Particles - TO SET
-Num_Particules = 200 #particles to start - HERE
+Num_Particules = 400 #particles to start - HERE
 Num_Particules_dt= 0 #particls added per second - HERE
 #TiO2 properties - rutile for now
 A_h = 6*10**(-20) #hamaker constant for rutile Tio2
@@ -257,11 +256,17 @@ Highest_x_velocity = 1
 tau = 1.0 # relaxation time for Ornstein Uhlenbeck, chosen as 1 for now 
 U_g = np.array([0, 1]) # mean gas velocity
 B = 0.5 # noise intensity
-wall = set(); #0 for right, 1 for left, 2 for up, 3 for bottom, 4 for none
+wall = set(); #is there a wall, #0 for right, 1 for left, 2 for up, 3 for bottom, 4 for none
 wall.add(2)
 wall.add(3)
 # wall.add(0)
 # wall.add(1)
+bounce = set() #is the wall bouncy?  #0 for right, 1 for left, 2 for up, 3 for bottom, 4 for none
+# bounce.add(2)
+# bounce.add(3)
+# bounce.add(0)
+# bounce.add(1)
+
 
 #keep the periodicity but bounce if needed, the iff loops already exist to transfer the particle to the ghost; 
 
@@ -512,7 +517,11 @@ for t in range(1, Nt+ 1):
                     idx = np.argmin(t_collisions)
                     First_collision = Colliding_pairs[idx]#first colliding pair
                     t_collision = t_collisions[idx] #time fo first collision
-                    XY_stack, Vp_stack, Cg_stack, Aggregate_set = update_particles_aggregation(XY_stack, Vp_stack, First_collision, t_collision, Added_par, Radius_molecule, Mass_one_particle, Num_Particules_end, Aggregate_set, Cg_stack)
+                    link = np.random.rand(1)
+                    if link > 0.50:
+                        XY_stack, Vp_stack, Cg_stack, Aggregate_set = update_particles_collision(XY_stack, Vp_stack, First_collision, t_collision, Added_par, Radius_molecule, Mass_one_particle, Num_Particules_end, Aggregate_set, Cg_stack)
+                    else:
+                        XY_stack, Vp_stack, Cg_stack, Aggregate_set = update_particles_aggregation(XY_stack, Vp_stack, First_collision, t_collision, Added_par, Radius_molecule, Mass_one_particle, Num_Particules_end, Aggregate_set, Cg_stack)
                     dt_left = dt_left - t_collision
                 else:
                     XY_stack = XY_stack + Vp_stack * dt_left * Added_par_stack
@@ -1096,9 +1105,14 @@ for t in range(1, Nt+ 1):
                     Index_par_local.pop(par)#remove from the particle index list
                     Index_par_local_set.discard(Index)
                 else :
-                    XY_proc[8, Index, 1] = XY_proc[8, Index, 1] - (XY_proc[8, Index, 1] - Local_up)  #set the position to the changed position after impact
-                    Vp_proc[8, Index, 1] = - Vp_proc[8, Index, 1] #reverse the speed in the y direction
-                    Cg_proc[8, Index, 1] = Cg_proc[8, Index, 1] - (Cg_proc[8, Index, 1] - Local_up)
+                    if 2 in bounce:
+                        XY_proc[8, Index, 1] = XY_proc[8, Index, 1] - (XY_proc[8, Index, 1] - Local_up)  #set the position to the changed position after impact
+                        Vp_proc[8, Index, 1] = - Vp_proc[8, Index, 1] #reverse the speed in the y direction
+                        Cg_proc[8, Index, 1] = Cg_proc[8, Index, 1] - (Cg_proc[8, Index, 1] - Local_up)
+                    else: 
+                        XY_proc[8, Index, 1] = Local_up
+                        Vp_proc[8, Index, :] = [0, 0]
+                        Cg_proc[8, Index, :] = XY_proc[8, Index, :]
             #local to down
             elif(Position_y < Local_down and Local_left <= Position_x < Local_right):
                 #if down is a wall then change the position and velocity if not then pass it on to the down ghost 
@@ -1146,9 +1160,15 @@ for t in range(1, Nt+ 1):
                     Index_par_local.pop(par)#remove from the particle index list
                     Index_par_local_set.discard(Index)
                 if (Local_up == L_total[1] and 2 in wall): 
-                    XY_proc[8, Index, 1] = XY_proc[8, Index, 1] - (XY_proc[8, Index, 1] - Local_up)  #set the position to the changed position after impact
-                    Vp_proc[8, Index, 1] = - Vp_proc[8, Index, 1] #reverse the speed in the y direction
-                    Cg_proc[8, Index, 1] = Cg_proc[8, Index, 1] - (Cg_proc[8, Index, 1] - Local_up)
+                    if 2 in bounce:
+                        XY_proc[8, Index, 1] = XY_proc[8, Index, 1] - (XY_proc[8, Index, 1] - Local_up)  #set the position to the changed position after impact
+                        Vp_proc[8, Index, 1] = - Vp_proc[8, Index, 1] #reverse the speed in the y direction
+                        Cg_proc[8, Index, 1] = Cg_proc[8, Index, 1] - (Cg_proc[8, Index, 1] - Local_up)
+                    else:
+                        XY_proc[8, Index, 1] = Local_up
+                        Vp_proc[8, Index, :] = [0, 0]
+                        Cg_proc[8, Index, :] = XY_proc[8, Index, :]
+                        
                 if (Local_right == L_total[0] and 0 in wall):
                     XY_proc[8, Index, 0] = XY_proc[8, Index, 0] - (XY_proc[8, Index, 0] - Local_right)  #set the position to the changed position after impact
                     Vp_proc[8, Index, 0] = - Vp_proc[8, Index, 0] #reverse the speed in the x direction
@@ -1246,9 +1266,15 @@ for t in range(1, Nt+ 1):
                     Index_par_local.pop(par)#remove from the particle index list
                     Index_par_local_set.discard(Index)
                 if Local_up == L_total[1] and 2 in wall:
-                    XY_proc[8, Index, 1] = XY_proc[8, Index, 1] - (XY_proc[8, Index, 1] - Local_up)  #set the position to the changed position after impact
-                    Vp_proc[8, Index, 1] = - Vp_proc[8, Index, 1] #reverse the speed in the y direction
-                    Cg_proc[8, Index, 1] = Cg_proc[8, Index, 1] - (Cg_proc[8, Index, 1] - Local_down)
+                    if 2 in bounce:
+                        XY_proc[8, Index, 1] = XY_proc[8, Index, 1] - (XY_proc[8, Index, 1] - Local_up)  #set the position to the changed position after impact
+                        Vp_proc[8, Index, 1] = - Vp_proc[8, Index, 1] #reverse the speed in the y direction
+                        Cg_proc[8, Index, 1] = Cg_proc[8, Index, 1] - (Cg_proc[8, Index, 1] - Local_up)
+                    else:
+                        XY_proc[8, Index, 1] = Local_up
+                        Vp_proc[8, Index, :] = [0, 0]
+                        Cg_proc[8, Index, :] = XY_proc[8, :, :]
+                    
                 if Local_left == 0 or 1 in wall:
                     XY_proc[8, Index, 0] = XY_proc[8, Index, 0] - (XY_proc[8, Index, 0] - Local_left)  #set the position to the changed position after impact
                     Vp_proc[8, Index, 0] = - Vp_proc[8, Index, 0] #reverse the speed in the x direction
@@ -1479,8 +1505,7 @@ for t in range(1, Nt+ 1):
             Cg_proc[7, Index] = c_grav
             
     XY_local_saved[t - 1, :, :] = XY_proc[8,:,:].copy() #save the updated values 
-if rank == 2:
-    print(XY_local_saved)
+    
 #saving the values of the local particles 
 if rank == 0: #the proc 0 will receive all of the other locally saved positoins of particles
     XY_master_saved = XY_local_saved.copy() #first let's say that the master positions is proc 0s and add the different position if dif than 00
