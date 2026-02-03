@@ -88,7 +88,90 @@ def update_particles(XY_local, XY_local_update, Vp_local, Colliding_pair, t_coll
         Vp_local[Colliding_pair[1], :] = Vp_local[Colliding_pair[1], :] + ((dv @ distance_particles) / projected_distance) * distance_particles
     return XY_local_update, Vp_local
         
-        
+def update_particles_aggregation(XY_stack, Vp_stack, Colliding_pair, t_collision, Added_par, Radius_particle, Num_Particules_end, Mass_particles, Cg_proc, Aggregate_set):
+    """
+    update the particle and its characteristics if the particles are agglomerating
+    Args:
+    
+    Returns:
+
+    """
+    relative_index = np.zeros(2, dtype = int)
+    print(Colliding_pair)
+    relative_index[0] = Colliding_pair[0] % (Num_Particules_end)
+    relative_index[1] = Colliding_pair[1] % (Num_Particules_end)
+    i, j = relative_index
+    Cgi = Cg_proc[i] #center of gravity of the first aggregate
+    Cgj = Cg_proc[j] #center of gravity of the second aggregate
+    numi = len(Aggregate_set[i]) #number of particles in the frist aggregate
+    if numi == 0:
+        numi = 1 #if the set is empty, there is the particle itself.
+    numj = len(Aggregate_set[j]) #nmber of particles in the second aggregate
+    if numj == 0:
+        numj = 1 #if the set is empty, there is the particle itself.
+    
+    # The need for relative index comes from the fact that to have smooth collisions, I have stacked all the values of the particles into one array; to ensure I am pulling the right radius values i have to divide the index of the stack by the length of  normal array
+    cr = ((((Radius_particle[relative_index[0]] + Radius_particle[relative_index[1]]) *10**(-6))/0.15) * (-0.88)) + 0.78
+    u_i = Vp_stack[Colliding_pair[0], :].copy()
+    u_j = Vp_stack[Colliding_pair[1], :].copy()
+    #update the position of the colliding particles
+    XY_stack = XY_stack+ Vp_stack * t_collision * np.tile(Added_par[:,None], (9, 1)) #update all of the particles and then later change the one which collided
+    XY_stack[Colliding_pair[0] , :] = XY_stack[Colliding_pair[0] , :].copy() + u_i * t_collision
+    XY_stack[Colliding_pair[1] , :] = XY_stack[Colliding_pair[1] , :].copy() + u_j * t_collision
+    #they should now be glued togther?
+    merge = set(Aggregate_set[i]) #create a set that we populate and then use to replace the old set. easier
+    merge.update(Aggregate_set[j])
+    merge.update([i, j])
+    cg_update = (Cgi * numi * Mass_particles[0]+ Cgj * numj * Mass_particles[0]) / (numi * Mass_particles[0] + numj * Mass_particles[0])
+    V_new = (u_i * numi * Mass_particles[0] + u_j * numj * Mass_particles[0]) / (numi * Mass_particles[0] + numj * Mass_particles[0])
+    
+    for k in merge:
+        Aggregate_set[k] = merge
+        Cg_proc[k] = cg_update
+        zone = zone_index(k)
+        Vp_stack[zone * Num_Particules_end - 1, :] = V_new # average the velocity after impact? missing the e?
+   
+    return XY_stack, Vp_stack, Cg_proc, Aggregate_set
+    
+    
+ 
+
+def interactions(Colliding_pair, A_h, Radius_particle, Mass_particle, Vp_stack, XY_stack, t_collision, Added_par, Num_particle_end):
+    """
+    find if the particles are aggregating or colliding
+    
+    """
+    D0 = np.array(2)
+    D0 = np.array([np.abs(XY_stack[Colliding_pair[0], 0] - XY_stack[Colliding_pair[1], 0]), np.abs(XY_stack[Colliding_pair[0], 1] - XY_stack[Colliding_pair[1], 1])])
+    #take off the absolute, i JUST HAVE TO BE CONSISTENT WITHT EH WAU o AM DOIN GIT.
+    if D0[0] == 0:
+        D0[0] = 10**(-8)
+    if D0[1] == 0:
+        D0[1] = 10**(-8)
+    #we need the distance in the form of an x y vecto r to get the proper forces, plug i in the right way?
+    relative_index = np.zeros(2, dtype = int)
+    relative_index[0] = Colliding_pair[0] % (Num_Particules_end)
+    relative_index[1] = Colliding_pair[1] % (Num_Particules_end)
+    #the following equation for adhering energy only works for particle of similar radiis but could be implemented otherwise using the following book:
+    #https://www.eng.uc.edu/~beaucag/Classes/AdvancedMaterialsThermodynamics/Books/Jacob%20N.%20Israelachvili%20-%20Intermolecular%20and%20Surface%20Forces,%20Third%20Edition_%20Revised%20Third%20Edition-Academic%20Press%20(2011).pdf
+    E_adh = np.zeros(2)
+    E_adh = (A_h * Radius_particle[relative_index[0]]) / (12 * D0)
+    F_adh = np.zeros(2)
+    F_adh = E_adh / D0
+    E_kin = np.zeros(2)
+    E_kin = 0.5 * Mass_particle[relative_index[0]] * (Vp_stack[Colliding_pair[0],:]**(2)) + 0.5 *  Mass_particle[relative_index[1]] * (Vp_stack[Colliding_pair[1], :]**(2))
+    F_kin = np.zeros(2)
+    F_kin = E_kin / D0
+    #try to implement a sort of flyby anomaly like in orbital mechanics?
+    if F_adh < F_kin :
+        update_particles_aggregation(XY_stack, Vp_stack, Colliding_pair, t_collision, Added_par, Radius_particle, Num_particle_end, Cg_proc)
+    else:
+        update_particles_collision(XY_stack,Vp_stack, Colliding_pair, t_collision, Added_par, Radius_particle, Mass_particle, Num_Particules_end)
+    # if xxxx:
+    #     Xy_stack, Vp_stack = update_particles_collision
+    # else:
+    #     update_particles_aggregation
+            
 plt.clf()
 T  = 20
 dt = 0.05
