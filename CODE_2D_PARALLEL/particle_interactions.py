@@ -66,7 +66,8 @@ def narrow_detect(Particle_test_pair, dt_left, Vp_stack, XY_stack, Radius_molecu
         return None, None
     
 #3 the third function is the update 
-def update_particles_collision(XY_stack, Vp_stack, Colliding_pair, t_collision, Added_par, Radius_molecule, Mass_one_particle, Num_Particules_end, Aggregate_set, Cg_stack):
+def update_particles_collision(XY_stack, Vp_stack, Colliding_pair, t_collision, Added_par_stack, Radius_molecule, Mass_stack, Num_Particules_end, Aggregate_set, Cg_stack, Index_par_local_set, Index_par_ghost_right_set, Index_par_ghost_left_set, Index_par_ghost_up_set, Index_par_ghost_down_set, 
+               Index_par_ghost_up_right_set, Index_par_ghost_down_right_set, Index_par_ghost_down_left_set, Index_par_ghost_up_left_set):
     """
     update the particle velocity and its position at contact - collision case
     Args:
@@ -94,20 +95,12 @@ def update_particles_collision(XY_stack, Vp_stack, Colliding_pair, t_collision, 
     cr = ((((2 * Radius_molecule) *10**(-6))/0.15) * (-0.88)) + 0.78
     u_i = Vp_stack[Colliding_pair[0], :].copy()
     u_j = Vp_stack[Colliding_pair[1], :].copy()
-    
-    #get the mass of the 2 colliding sides
-    numi = len(Aggregate_set[i]) #number of particles in the frist aggregate
-    if numi == 0:
-        numi = 1 #if the set is empty, there is the particle itself.
-    numj = len(Aggregate_set[j]) #number of particles in the second aggregate
-    if numj == 0:
-        numj = 1 #if the set is empty, there is the particle itself.
         
-    mass_i = Mass_one_particle * numi
-    mass_j = Mass_one_particle * numj
+    mass_i = Mass_stack[Colliding_pair[0]]
+    mass_j = Mass_stack[Colliding_pair[1]]
 
     #update the position of the colliding particles
-    XY_stack = XY_stack+ Vp_stack * t_collision * np.tile(Added_par[:,None], (9, 1)) #update all of the particles and then later change the one which collided
+    XY_stack = XY_stack + Vp_stack * t_collision * Added_par_stack #update all of the particles and then later change the one which collided
     XY_stack[Colliding_pair[0] , :] = XY_stack[Colliding_pair[0] , :].copy() + u_i * t_collision
     XY_stack[Colliding_pair[1] , :] = XY_stack[Colliding_pair[1] , :].copy() + u_j * t_collision
     #Update the velocities of the particles
@@ -115,11 +108,20 @@ def update_particles_collision(XY_stack, Vp_stack, Colliding_pair, t_collision, 
     dv = u_i - u_j #relative speed
     projected_distance = distance_particles @ distance_particles #||C1 - C2 ||^2
     if projected_distance > 1e-12:
-        Vp_stack[Colliding_pair[0], :] = (cr * mass_j * (u_j - u_i) + mass_i * u_i + mass_j * u_j)/ (mass_i + mass_j)
-        Vp_stack[Colliding_pair[1], :] = (cr * mass_i * (u_i - u_j) + mass_i * u_i + mass_j * u_j)/ (mass_i + mass_j)
+        for k in Aggregate_set[i]: #update the velocities of all the particles in the aggregate
+            zone = zone_index(k, Index_par_local_set, Index_par_ghost_right_set, Index_par_ghost_left_set, Index_par_ghost_up_set, Index_par_ghost_down_set, 
+               Index_par_ghost_up_right_set, Index_par_ghost_down_right_set, Index_par_ghost_down_left_set, Index_par_ghost_up_left_set)
+            if zone != None:
+                Vp_stack[zone * Num_Particules_end + k, :] = (cr * mass_j * (u_j - u_i) + mass_i * u_i + mass_j * u_j)/ (mass_i + mass_j) # average the velocity after impact? missing the e?
+        for k in Aggregate_set[j]: #update the velocities of all the particles in the aggregate
+            zone = zone_index(k, Index_par_local_set, Index_par_ghost_right_set, Index_par_ghost_left_set, Index_par_ghost_up_set, Index_par_ghost_down_set, 
+                              Index_par_ghost_up_right_set, Index_par_ghost_down_right_set, Index_par_ghost_down_left_set, Index_par_ghost_up_left_set)
+            if zone != None:
+                Vp_stack[zone * Num_Particules_end + k, :] = (cr * mass_i * (u_i - u_j) + mass_i * u_i + mass_j * u_j)/ (mass_i + mass_j)
+                
     return XY_stack, Vp_stack, Cg_stack, Aggregate_set,
 
-def update_particles_aggregation(XY_stack, Vp_stack, Colliding_pair, t_collision, Added_par, Radius_molecule, Mass_one_particle, Num_Particules_end, Aggregate_set, Cg_stack, Index_par_local_set, Index_par_ghost_right_set, Index_par_ghost_left_set, Index_par_ghost_up_set, Index_par_ghost_down_set, 
+def update_particles_aggregation(XY_stack, Vp_stack, Colliding_pair, t_collision, Added_par_stack, Radius_molecule, Mass_stack, Num_Particules_end, Aggregate_set, Cg_stack, Index_par_local_set, Index_par_ghost_right_set, Index_par_ghost_left_set, Index_par_ghost_up_set, Index_par_ghost_down_set, 
                Index_par_ghost_up_right_set, Index_par_ghost_down_right_set, Index_par_ghost_down_left_set, Index_par_ghost_up_left_set):
     """
     update the particle and its characteristics if the particles are agglomerating
@@ -134,32 +136,27 @@ def update_particles_aggregation(XY_stack, Vp_stack, Colliding_pair, t_collision
     i, j = relative_index
     Cgi = Cg_stack[Colliding_pair[0], :] #center of gravity of the first aggregate
     Cgj = Cg_stack[Colliding_pair[1], :] #center of gravity of the second aggregate
-    
-    #get the mass of the 2 colliding sides
-    numi = len(Aggregate_set[i]) #number of particles in the frist aggregate
-    if numi == 0:
-        numi = 1 #if the set is empty, there is the particle itself.
-    numj = len(Aggregate_set[j]) #nmber of particles in the second aggregate
-    if numj == 0:
-        numj = 1 #if the set is empty, there is the particle itself.
         
-    mass_i = Mass_one_particle * numi
-    mass_j = Mass_one_particle * numj
+    mass_i = Mass_stack[Colliding_pair[0]]
+    mass_j = Mass_stack[Colliding_pair[1]]
     
     # The need for relative index comes from the fact that to have smooth collisions, I have stacked all the values of the particles into one array; to ensure I am pulling the right radius values i have to divide the index of the stack by the length of  normal array
     cr = ((((2 * Radius_molecule) *10**(-6))/0.15) * (-0.88)) + 0.78
     u_i = Vp_stack[Colliding_pair[0], :].copy()
     u_j = Vp_stack[Colliding_pair[1], :].copy()
     #update the position of the colliding particles
-    XY_stack = XY_stack+ Vp_stack * t_collision * np.tile(Added_par[:,None], (9, 1)) #update all of the particles and then later change the one which collided
+    XY_stack = XY_stack+ Vp_stack * t_collision * Added_par_stack #update all of the particles and then later change the one which collided
     XY_stack[Colliding_pair[0] , :] = XY_stack[Colliding_pair[0] , :].copy() + u_i * t_collision
     XY_stack[Colliding_pair[1] , :] = XY_stack[Colliding_pair[1] , :].copy() + u_j * t_collision
     #they should now be glued togther?
+    #updates
     merge = set(Aggregate_set[i]) #create a set that we populate and then use to replace the old set. easier
     merge.update(Aggregate_set[j])
     merge.update([i, j])
+    Mass_new = Mass_stack[Colliding_pair[0]] + Mass_stack[Colliding_pair[1]]
     cg_update = (Cgi * mass_i + Cgj * mass_j) / (mass_i + mass_j)
     V_new = (u_i * mass_i + u_j * mass_j) / (mass_i + mass_j)
+    
     for k in merge:
         Aggregate_set[k] = merge.copy()
         zone = zone_index(k, Index_par_local_set, Index_par_ghost_right_set, Index_par_ghost_left_set, Index_par_ghost_up_set, Index_par_ghost_down_set, 
@@ -167,6 +164,7 @@ def update_particles_aggregation(XY_stack, Vp_stack, Colliding_pair, t_collision
         if zone != None:
             Cg_stack[zone * Num_Particules_end + k, :] = cg_update.copy()
             Vp_stack[zone * Num_Particules_end + k, :] = V_new.copy() # average the velocity after impact? missing the e?
+            Mass_stack[zone * Num_Particules_end + k, :] = Mass_new.copy() 
    
     return XY_stack, Vp_stack, Cg_stack, Aggregate_set
 
