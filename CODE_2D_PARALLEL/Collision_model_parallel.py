@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt #plotting
 import time
 from matplotlib.animation import FuncAnimation, FFMpegWriter #animation
 from scipy.spatial import cKDTree #spatial tree to do a broad search
-from particle_interactions import update_particles_aggregation, update_particles_collision, broad_detect, narrow_detect
+from particle_interactions import update_particles_aggregation, update_particles_collision, broad_detect, narrow_detect, bounced, adhered
 
 #SCRIPT
 
@@ -43,14 +43,14 @@ dt = 0.05 #delta t
 #mp4 animation
 save_gif_animation = True # save animation as a mp4? - To SET 
 #Mesh - TO SET
-L_total = np.array([20, 20]) #Total Size in microm - HERE
+L_total = np.array([10, 10]) #Total Size in microm - HERE
 #Particles - TO SET
 position = 0 #0 for auto and 1 for manual choice
-Num_Particules = 400 #particles to start - HERE
-Num_Particules_dt= 0 #particls added per second - HERE
+Num_Particules = 2000 #particles to start - HERE
+Num_Particules_dt= 1 #particls added per second - HERE
 #TiO2 properties - rutile for now
 A_h = 6*10**(-20) #hamaker constant for rutile Tio2
-Radius_molecule = 0.1 #radius of the particule in micrometer 
+Radius_molecule = 0.02 #radius of the particule in micrometer 
 density = 4500000 #g/m3
 Molar_mass = 79.9 # we can put the molecular mass in g/mol because we are only using this value for ratio calculation
 #Velocity of particles
@@ -67,14 +67,11 @@ U_g = np.array([0, 1]) # mean gas velocity
 wall = set(); 
 wall.add(2)
 wall.add(3)
-# wall.add(0)
-# wall.add(1)
-#bounciness: is the wall bouncy?  #0 for right, 1 for left, 2 for up, 3 for bottom, 4 for none
-bounce = set() 
-bounce.add(2)
-# bounce.add(3)
-# bounce.add(0)
-# bounce.add(1)
+wall.add(0)
+wall.add(1)
+#adhering ?: is the wall adhering?  #0 for right, 1 for left, 2 for up, 3 for bottom, 4 for none
+adhere = set() 
+adhere.add(2)
 
 # init var - DO NOT TOUCH
 Nt = int(T/ dt) #num of Iterations
@@ -177,7 +174,7 @@ Attributes = np.zeros((6, 9, Num_Particules_end, 2)) #creating the different att
 # Attributes[0, :,:, :] : position; 1: velocity; 2: Cg_proc; 3: Mass; 4: Display on or off; 5: Attached to the wall 
 
 ##[:,0] : right; [:,1]: left; [:,2]: up; [:,3]: down [:,4] : up right; [:,5]: down right; [:,6]: down left; [:,7]: up left; [:. 8]: local
-Aggregate_set = [set() for p in range(Num_Particules_end)]
+Aggregate_set = [{p} for p in range(Num_Particules_end)]
 #setting the particule index key
 #num of particules per processor calculated thanks to len (Index)
 #choice: there are one list and one set having the same value because it is more efficient to search in a set and reduces considerably the runtime 
@@ -211,7 +208,7 @@ for p in range(Num_Particules_end):
         Attributes[0, 8, p, :] = XY_start[p, :] #position
         Attributes[1, 8, p, :] = Vp[p, :] #velocity
         Attributes[2, 8, p, :] = XY_start[p, :] #Center of gravity is equal to the position unless in an aggregate
-        Attributes[3, 8, p, :] = [Mass_one_particle, 0] #mass, the 0 is to not get errors
+        Attributes[3, 8, p, :] = [Mass_one_particle, Mass_one_particle] #mass, the 0 is to not get errors
         Attributes[4, 8, p, :] = [Added_par[p], Added_par[p]] # display particules, 0 to not get errors
         Attributes[5, 8, p, :] = [0, 0] #attached to a wall, the first 0 is for false and the second to fill the space to not get errors
     elif Local_ghost_left <= Position_x < Local_left and Local_down <= Position_y < Local_up: #particule in the left ghost
@@ -220,7 +217,7 @@ for p in range(Num_Particules_end):
         Attributes[0, 1, p, :] = XY_start[p, :] #position
         Attributes[1, 1, p, :] = Vp[p, :] #velocity
         Attributes[2, 1, p, :] = XY_start[p, :] #Center of gravity is equal to the position unless in an aggregate
-        Attributes[3, 1, p, :] = [Mass_one_particle, 0] #mass
+        Attributes[3, 1, p, :] = [Mass_one_particle, Mass_one_particle] #mass
         Attributes[4, 1, p, :] = [Added_par[p], Added_par[p]] # display particules, 0 to not get errors
         Attributes[5, 1, p, :] = [0, 0] #attached to a wall 
     elif Local_right <= Position_x <= Local_ghost_right and Local_down <= Position_y < Local_up: #particule in the right ghost
@@ -229,7 +226,7 @@ for p in range(Num_Particules_end):
         Attributes[0, 0, p, :] = XY_start[p, :] #position
         Attributes[1, 0, p, :] = Vp[p, :] #velocity
         Attributes[2, 0, p, :] = XY_start[p, :] #Center of gravity is equal to the position unless in an aggregate
-        Attributes[3, 0, p, :] = [Mass_one_particle, 0] #mass
+        Attributes[3, 0, p, :] = [Mass_one_particle, Mass_one_particle] #mass
         Attributes[4, 0, p, :] = [Added_par[p], Added_par[p]] # display particules, 0 to not get errors
         Attributes[5, 0, p, :] = [0, 0] #attached to a wall 
     elif Local_left <= Position_x < Local_right and Local_up <= Position_y <= Local_ghost_up: #up ghost 
@@ -238,7 +235,7 @@ for p in range(Num_Particules_end):
         Attributes[0, 2, p, :] = XY_start[p, :] #position
         Attributes[1, 2, p, :] = Vp[p, :] #velocity
         Attributes[2, 2, p, :] = XY_start[p, :] #Center of gravity is equal to the position unless in an aggregate
-        Attributes[3, 2, p, :] = [Mass_one_particle, 0] #mass
+        Attributes[3, 2, p, :] = [Mass_one_particle, Mass_one_particle] #mass
         Attributes[4, 2, p, :] = [Added_par[p], Added_par[p]] # display particules, 0 to not get errors
         Attributes[5, 2, p, :] = [0, 0] #attached to a wall  
     elif Local_left <= Position_x < Local_right and Local_ghost_down <= Position_y < Local_down: #down ghost 
@@ -247,7 +244,7 @@ for p in range(Num_Particules_end):
         Attributes[0, 3, p, :] = XY_start[p, :] #position
         Attributes[1, 3, p, :] = Vp[p, :] #velocity
         Attributes[2, 3, p, :] = XY_start[p, :] #Center of gravity is equal to the position unless in an aggregate
-        Attributes[3, 3, p, :] = [Mass_one_particle, 0] #mass
+        Attributes[3, 3, p, :] = [Mass_one_particle, Mass_one_particle] #mass
         Attributes[4, 3, p, :] = [Added_par[p], Added_par[p]] # display particules, 0 to not get errors
         Attributes[5, 3, p, :] = [0, 0] #attached to a wall 
     elif Local_right <= Position_x <= Local_ghost_right and Local_up <= Position_y <= Local_ghost_up : #corners up right ghost
@@ -256,7 +253,7 @@ for p in range(Num_Particules_end):
         Attributes[0, 4, p, :] = XY_start[p, :] #position
         Attributes[1, 4, p, :] = Vp[p, :] #velocity
         Attributes[2, 4, p, :] = XY_start[p, :] #Center of gravity is equal to the position unless in an aggregate
-        Attributes[3, 4, p, :] = [Mass_one_particle, 0] #mass
+        Attributes[3, 4, p, :] = [Mass_one_particle, Mass_one_particle] #mass
         Attributes[4, 4, p, :] = [Added_par[p], Added_par[p]] # display particules, 0 to not get errors
         Attributes[5, 4, p, :] = [0, 0] #attached to a wall  
     elif Local_right <= Position_x <= Local_ghost_right and Local_ghost_down <= Position_y < Local_down : #corners down right ghost
@@ -265,7 +262,7 @@ for p in range(Num_Particules_end):
         Attributes[0, 5, p, :] = XY_start[p, :] #position
         Attributes[1, 5, p, :] = Vp[p, :] #velocity
         Attributes[2, 5, p, :] = XY_start[p, :] #Center of gravity is equal to the position unless in an aggregate
-        Attributes[3, 5, p, :] = [Mass_one_particle, 0] #mass
+        Attributes[3, 5, p, :] = [Mass_one_particle, Mass_one_particle] #mass
         Attributes[4, 5, p, :] = [Added_par[p], Added_par[p]] # display particules, 0 to not get errors
         Attributes[5, 5, p, :] = [0, 0] #attached to a wall 
     elif Local_ghost_left <= Position_x < Local_left and Local_ghost_down <= Position_y < Local_down : #corners down left ghost
@@ -274,7 +271,7 @@ for p in range(Num_Particules_end):
         Attributes[0, 6, p, :] = XY_start[p, :] #position
         Attributes[1, 6, p, :] = Vp[p, :] #velocity
         Attributes[2, 6, p, :] = XY_start[p, :] #Center of gravity is equal to the position unless in an aggregate
-        Attributes[3, 6, p, :] = [Mass_one_particle, 0] #mass
+        Attributes[3, 6, p, :] = [Mass_one_particle, Mass_one_particle] #mass
         Attributes[4, 6, p, :] = [Added_par[p], Added_par[p]] # display particules, 0 to not get errors
         Attributes[5, 6, p, :] = [0, 0] #attached to a wall  
     elif Local_ghost_left <= Position_x < Local_left and Local_up <= Position_y <= Local_ghost_up : #corners up left ghost
@@ -283,7 +280,7 @@ for p in range(Num_Particules_end):
         Attributes[0, 7, p, :] = XY_start[p, :] #position
         Attributes[1, 7, p, :] = Vp[p, :] #velocity
         Attributes[2, 7, p, :] = XY_start[p, :] #Center of gravity is equal to the position unless in an aggregate
-        Attributes[3, 7, p, :] = [Mass_one_particle, 0] #mass
+        Attributes[3, 7, p, :] = [Mass_one_particle, Mass_one_particle] #mass
         Attributes[4, 7, p, :] = [Added_par[p], Added_par[p]] # display particules, 0 to not get errors
         Attributes[5, 7, p, :] = [0, 0] #attached to a wall  
     #because of the periodical condition, the ghosts of the borders is actually on the other side, it can cause some distubances in the t =0 because the particle dont fall into any categories    
@@ -312,7 +309,7 @@ for t in range(1, Nt+ 1):
     
     if t*dt <= T_add_particles:
         Attributes[4, :, Num_Particules : (Num_Particules + Num_Particules_dt), :] = 1
-        Added_par_stack = Attributes[4, :, :, :].reshape(-1,2)
+        Added_par_stack = Attributes[4, :, :, :].reshape(-1, 2)
         Num_Particules = Num_Particules + Num_Particules_dt       
         #update the transparent particules
         
@@ -350,12 +347,12 @@ for t in range(1, Nt+ 1):
                     First_collision = Colliding_pairs[idx]#first colliding pair
                     t_collision = t_collisions[idx] #time fo first collision
                     link = np.random.rand(1)
-                    if link > 0.50:
-                        XY_stack, Vp_stack, Cg_stack, Aggregate_set = update_particles_collision(XY_stack, Vp_stack, First_collision, t_collision, Added_par_stack, Radius_molecule, Mass_stack, Num_Particules_end, Aggregate_set, Cg_stack, 
+                    if link > 0.5 :
+                        XY_stack, Vp_stack, Cg_stack, Aggregate_set = update_particles_collision(XY_stack, Vp_stack, First_collision, t_collision, Added_par_stack, Radius_molecule, Mass_stack, Num_Particules_end, Aggregate_set, Cg_stack, Attributes,
                                                                                                  Index_par_local_set, Index_par_ghost_right_set, Index_par_ghost_left_set, Index_par_ghost_up_set, Index_par_ghost_down_set, 
                                                                                                  Index_par_ghost_up_right_set, Index_par_ghost_down_right_set, Index_par_ghost_down_left_set, Index_par_ghost_up_left_set)
                     else:
-                        XY_stack, Vp_stack, Cg_stack, Aggregate_set = update_particles_aggregation(XY_stack, Vp_stack, First_collision, t_collision, Added_par_stack, Radius_molecule, Mass_stack, Num_Particules_end, Aggregate_set, Cg_stack, 
+                        XY_stack, Vp_stack, Cg_stack, Aggregate_set = update_particles_aggregation(XY_stack, Vp_stack, First_collision, t_collision, Added_par_stack, Radius_molecule, Mass_stack, Num_Particules_end, Aggregate_set, Cg_stack, Attributes, 
                                                                                                    Index_par_local_set, Index_par_ghost_right_set, Index_par_ghost_left_set, Index_par_ghost_up_set, Index_par_ghost_down_set, 
                                                                                                    Index_par_ghost_up_right_set, Index_par_ghost_down_right_set, Index_par_ghost_down_left_set, Index_par_ghost_up_left_set)
                     dt_left = dt_left - t_collision
@@ -784,9 +781,8 @@ for t in range(1, Nt+ 1):
                     Index_par_local.pop(par)#remove from the particle index list
                     Index_par_local_set.discard(Index)
                 else:
-                    Attributes[0, 8, Index, 0] = Attributes[0, 8, Index, 0] - (Attributes[0, 8, Index, 0] - Local_right) #set the position to the changed position after impact
-                    Attributes[1, 8, Index, 0] = - Attributes[1, 8, Index, 0] #reverse the speed in the x direction
-                    Attributes[2, 8, Index, 0] = Attributes[2, 8, Index, 0] - (Attributes[2, 8, Index, 0] - Local_right)
+                    Attributes[:, 8, :, :] = bounced(Index, Attributes[:, 8, :, :], Aggregate_set[Index], Local_right, "right") #this function changes the velocities, center of gravity and position to propagate the bouncing to the whole aggregate
+                    
             #local to left ghost 
             elif Position_x < Local_left and Local_down <= Position_y < Local_up :
                 #if left is a wall then change the position and velocity if not then pass it on to the left ghost 
@@ -802,9 +798,8 @@ for t in range(1, Nt+ 1):
                     Index_par_local.pop(par)#remove from the particle index list
                     Index_par_local_set.discard(Index)
                 else:
-                    Attributes[0, 8, Index, 0] = Attributes[0, 8, Index, 0] - (Attributes[0, 8, Index, 0] - Local_left) #set the position to the changed position after impact
-                    Attributes[1, 8, Index, 0] = - Attributes[1, 8, Index, 0] #reverse the speed in the x direction
-                    Attributes[2, 8, Index, 0] = Attributes[2, 8, Index, 0] - (Attributes[2, 8, Index, 0] - Local_left)
+                    Attributes[:, 8, :, :] = bounced(Index, Attributes[:, 8, :, :], Aggregate_set[Index], Local_left, "left") #this function changes the velocities, center of gravity and position to propagate the 
+            
             #local to up 
             elif(Position_y >= Local_up and Local_left <= Position_x < Local_right):
                 #if up is a wall then change the position and velocity if not then pass it on to the up ghost 
@@ -820,14 +815,12 @@ for t in range(1, Nt+ 1):
                     Index_par_local.pop(par)#remove from the particle index list
                     Index_par_local_set.discard(Index)
                 else :
-                    if 2 in bounce:
-                        Attributes[0, 8, Index, 1] = Attributes[0, 8, Index, 1] - (Attributes[0, 8, Index, 1] - Local_up) #set the position to the changed position after impact
-                        Attributes[1, 8, Index, 1] = - Attributes[1, 8, Index, 1] #reverse the speed in the y direction
-                        Attributes[2, 8, Index, 1] = Attributes[2, 8, Index, 1] - (Attributes[2, 8, Index, 1] - Local_up) #change the center of gravity
+                    if 2 not in adhere:
+                        Attributes[:, 8, :, :] = bounced(Index, Attributes[:, 8, :, :], Aggregate_set[Index], Local_up, "up") #this function changes the velocities, center of gravity and position to propagate the 
                     else: 
                         #if the wall is sticky then the whole aggregate has to loose velocity
-                        Attributes[0, 8, Index, 1] = Local_up
-                        #for all of the aggregate velocity = 0, 0, if collision the velocity remains 0?
+                        Attributes[:, 8, :, :] = adhered(Index, Attributes[:, 8, :, :], Aggregate_set[Index], Local_up, "up")
+                        #for all of the aggregate  velocity = 0, 0, if collision the velocity remains 0?
 
             #local to down
             elif(Position_y < Local_down and Local_left <= Position_x < Local_right):
@@ -844,9 +837,7 @@ for t in range(1, Nt+ 1):
                     Index_par_local.pop(par)#remove from the particle index list
                     Index_par_local_set.discard(Index)
                 else:
-                    Attributes[0, 8, Index, 1] = Attributes[0, 8, Index, 1] - (Attributes[0, 8, Index, 1] - Local_down) #set the position to the changed position after impact
-                    Attributes[1, 8, Index, 1] = - Attributes[1, 8, Index, 1] #reverse the speed in the y direction
-                    Attributes[2, 8, Index, 1] = Attributes[2, 8, Index, 1] - (Attributes[2, 8, Index, 1] - Local_down) #change the center of gravity
+                    Attributes[:, 8, :, :] = bounced(Index, Attributes[:, 8, :, :], Aggregate_set[Index], Local_down, "down") #this function changes the velocities, center of gravity and position to propagate the 
             #local to up right    
             elif Position_x >= Local_right and Local_up <= Position_y <= Local_ghost_up:
                 #if up and right are a wall then change the position and velocity if not then pass it on to the up right ghost 
@@ -868,19 +859,15 @@ for t in range(1, Nt+ 1):
                     Index_par_local.pop(par)#remove from the particle index list
                     Index_par_local_set.discard(Index)
                 if (Local_up == L_total[1] and 2 in wall): 
-                    if 2 in bounce:
-                        Attributes[0, 8, Index, 1] = Attributes[0, 8, Index, 1] - (Attributes[0, 8, Index, 1] - Local_up) #set the position to the changed position after impact
-                        Attributes[1, 8, Index, 1] = - Attributes[1, 8, Index, 1] #reverse the speed in the y direction
-                        Attributes[2, 8, Index, 1] = Attributes[2, 8, Index, 1] - (Attributes[2, 8, Index, 1] - Local_up) #change the center of gravity
+                    if 2 not in adhere:
+                        Attributes[:, 8, :, :] = bounced(Index, Attributes[:, 8, :, :], Aggregate_set[Index], Local_up, "up") #this function changes the velocities, center of gravity and position to propagate the 
                     else:
                         #if the wall is sticky then the whole aggregate has to loose velocity
-                        Attributes[0, 8, Index, 1] = Local_up
+                        Attributes[:, 8, :, :] = adhered(Index, Attributes[:, 8, :, :], Aggregate_set[Index], Local_up, "up")
                         #for all of the aggregate velocity = 0, 0, if collision the velocity remains 0?
                         
                 if (Local_right == L_total[0] and 0 in wall):
-                    Attributes[0, 8, Index, 0] = Attributes[0, 8, Index, 0] - (Attributes[0, 8, Index, 0] - Local_right) #set the position to the changed position after impact
-                    Attributes[1, 8, Index, 0] = - Attributes[1, 8, Index, 0] #reverse the speed in the x direction
-                    Attributes[2, 8, Index, 0] = Attributes[2, 8, Index, 0] - (Attributes[2, 8, Index, 0] - Local_right)
+                    Attributes[:, 8, :, :] = bounced(Index, Attributes[:, 8, :, :], Aggregate_set[Index], Local_right, "right") #this function changes the velocities, center of gravity and position to propagate the 
                     
             #local to down right
             elif Position_x >= Local_right and Local_ghost_down <= Position_y < Local_down:
@@ -904,13 +891,9 @@ for t in range(1, Nt+ 1):
                     Index_par_local.pop(par)#remove from the particle index list
                     Index_par_local_set.discard(Index)
                 if (Local_down == 0 and 3 in wall): #only the right bounces
-                    Attributes[0, 8, Index, 1] = Attributes[0, 8, Index, 1] - (Attributes[0, 8, Index, 1] - Local_down) #set the position to the changed position after impact
-                    Attributes[1, 8, Index, 1] = - Attributes[1, 8, Index, 1] #reverse the speed in the y direction
-                    Attributes[2, 8, Index, 1] = Attributes[2, 8, Index, 1] - (Attributes[2, 8, Index, 1] - Local_down) #change the center of gravity
+                    Attributes[:, 8, :, :] = bounced(Index, Attributes[:, 8, :, :], Aggregate_set[Index], Local_down, "down") #this function changes the velocities, center of gravity and position to propagate the 
                 if (Local_right == L_total[0] and 0 in wall):
-                    Attributes[0, 8, Index, 0] = Attributes[0, 8, Index, 0] - (Attributes[0, 8, Index, 0] - Local_right) #set the position to the changed position after impact
-                    Attributes[1, 8, Index, 0] = - Attributes[1, 8, Index, 0] #reverse the speed in the x direction
-                    Attributes[2, 8, Index, 0] = Attributes[2, 8, Index, 0] - (Attributes[2, 8, Index, 0] - Local_right)
+                    Attributes[:, 8, :, :] = bounced(Index, Attributes[:, 8, :, :], Aggregate_set[Index], Local_right, "right") #this function changes the velocities, center of gravity and position to propagate the 
             #local to down left
             elif (Local_ghost_left <= Position_x < Local_left and Local_ghost_down <= Position_y < Local_down):
                 #if down and left are a wall then change the position and velocity if not then pass it on to the down left ghost 
@@ -933,13 +916,9 @@ for t in range(1, Nt+ 1):
                     Index_par_local.pop(par)#remove from the particle index list
                     Index_par_local_set.discard(Index)
                 if (Local_down == 0 and 3 in wall):
-                    Attributes[0, 8, Index, 1] = Attributes[0, 8, Index, 1] - (Attributes[0, 8, Index, 1] - Local_down) #set the position to the changed position after impact
-                    Attributes[1, 8, Index, 1] = - Attributes[1, 8, Index, 1] #reverse the speed in the y direction
-                    Attributes[2, 8, Index, 1] = Attributes[2, 8, Index, 1] - (Attributes[2, 8, Index, 1] - Local_down) #change the center of gravity
+                    Attributes[:, 8, :, :] = bounced(Index, Attributes[:, 8, :, :], Aggregate_set[Index], Local_down, "down") #this function changes the velocities, center of gravity and position to propagate the 
                 if (Local_left == 0 and 1 in wall) :
-                    Attributes[0, 8, Index, 0] = Attributes[0, 8, Index, 0] - (Attributes[0, 8, Index, 0] - Local_left) #set the position to the changed position after impact
-                    Attributes[1, 8, Index, 0] = - Attributes[1, 8, Index, 0] #reverse the speed in the x direction
-                    Attributes[2, 8, Index, 0] = Attributes[2, 8, Index, 0] - (Attributes[2, 8, Index, 0] - Local_left)
+                    Attributes[:, 8, :, :] = bounced(Index, Attributes[:, 8, :, :], Aggregate_set[Index], Local_left, "left") #this function changes the velocities, center of gravity and position to propagate the 
             #local to up left
             elif (Local_ghost_left <= Position_x < Local_left and Local_up <= Position_y <= Local_ghost_up):
                 #if up and left are a wall then change the position and velocity if not then pass it on to the up left ghost 
@@ -962,19 +941,15 @@ for t in range(1, Nt+ 1):
                     Index_par_local.pop(par)#remove from the particle index list
                     Index_par_local_set.discard(Index)
                 if Local_up == L_total[1] and 2 in wall:
-                    if 2 in bounce:
-                        Attributes[0, 8, Index, 1] = Attributes[0, 8, Index, 1] - (Attributes[0, 8, Index, 1] - Local_up) #set the position to the changed position after impact
-                        Attributes[1, 8, Index, 1] = - Attributes[1, 8, Index, 1] #reverse the speed in the y direction
-                        Attributes[2, 8, Index, 1] = Attributes[2, 8, Index, 1] - (Attributes[2, 8, Index, 1] - Local_up) #change the center of gravity
+                    if 2 not in adhere:
+                        Attributes[:, 8, :, :] = bounced(Index, Attributes[:, 8, :, :], Aggregate_set[Index], Local_up, "up") #this function changes the velocities, center of gravity and position to propagate the 
                     else:
                         #if the wall is sticky then the whole aggregate has to loose velocity
-                        Attributes[0, 8, Index, 1] = Local_up
+                        Attributes[:, 8, :, :] = adhered(Index, Attributes[:, 8, :, :], Aggregate_set[Index], Local_up, "up")
                         #for all of the aggregate velocity = 0, 0, if collision the velocity remains 0?
                     
                 if Local_left == 0 or 1 in wall:
-                    Attributes[0, 8, Index, 0] = Attributes[0, 8, Index, 0] - (Attributes[0, 8, Index, 0] - Local_left) #set the position to the changed position after impact
-                    Attributes[1, 8, Index, 0] = - Attributes[1, 8, Index, 0] #reverse the speed in the x direction
-                    Attributes[2, 8, Index, 0] = Attributes[2, 8, Index, 0] - (Attributes[2, 8, Index, 0] - Local_left)
+                    Attributes[:, 8, :, :] = bounced(Index, Attributes[:, 8, :, :], Aggregate_set[Index], Local_left, "left") #this function changes the velocities, center of gravity and position to propagate the 
                     
             #we are reseting the booleans at the end to ensure that the other conditions are viewed    
             if ((Position_x < (Local_right - Buffer_zone_width[0]) or Position_x >= Local_right or Position_y >= Local_up or Position_y < Local_down) and Local_sent[Index, 0]): #if it leaves on the other side back to false
@@ -1030,7 +1005,7 @@ for t in range(1, Nt+ 1):
     for Index, attributes, aggregate in incoming_from_left: #for all the different particles
         #add to ghost left
         if coordinates_x == 0:
-            Attributes[0, 0, Index, 0] = Attributes[0, 0, Index, 0] - L_total[0] #if it comes from the last proc, the position is equal to 
+            attributes[0, 0] = attributes[0, 0] - L_total[0] #if it comes from the last proc, the position is equal to 
         if Index not in Index_par_ghost_left_set:
             Index_par_ghost_left.append(Index) #add the particle index
             Index_par_ghost_left_set.add(Index)
@@ -1048,7 +1023,7 @@ for t in range(1, Nt+ 1):
     for Index,attributes, aggregate in incoming_from_right: #for all the different particles
         #add to ghost b
         if coordinates_x == (dimensions_proc[0] - 1) :
-            Attributes[0, 0, Index, 0] = Attributes[0, 0, Index, 0] + L_total[0] #if it comes from the first proc, te position is equal to 
+            attributes[0, 0] = attributes[0, 0] + L_total[0] #if it comes from the first proc, te position is equal to 
         if Index not in Index_par_ghost_right_set:
             Index_par_ghost_right.append(Index)
             Index_par_ghost_right_set.add(Index)
@@ -1065,7 +1040,7 @@ for t in range(1, Nt+ 1):
     #     print("incoming from up: ", incoming_from_up)
     for Index, attributes, aggregate in incoming_from_up:
         if coordinates_y == (dimensions_proc[1] - 1):
-            Attributes[0, 0, Index, 1] = Attributes[0, 0, Index, 1] + L_total[1] #if it comes from the first proc, te position is equal to 
+            attributes[0, 1] = attributes[0, 1] + L_total[1] #if it comes from the first proc, te position is equal to 
         if Index not in Index_par_ghost_up_set:
             Index_par_ghost_up.append(Index)
             Index_par_ghost_up_set.add(Index)
@@ -1082,7 +1057,7 @@ for t in range(1, Nt+ 1):
     #      print("for rank : ", rank,"incoming from down : ", incoming_from_down)
     for Index, attributes, aggregate in incoming_from_down:
         if coordinates_y == 0:
-            Attributes[0, 0, Index, 1] = Attributes[0, 0, Index, 1] - L_total[1] #if it comes from the first proc, te position is equal to 
+            attributes[0, 1] = attributes[0, 1] - L_total[1] #if it comes from the first proc, te position is equal to 
         if Index not in Index_par_ghost_down_set:
             Index_par_ghost_down.append(Index)
             Index_par_ghost_down_set.add(Index)
@@ -1099,9 +1074,9 @@ for t in range(1, Nt+ 1):
     #     print("incoming from up right: ", incoming_from_up_right)
     for Index, attributes, aggregate in incoming_from_up_right:
         if coordinates_x == (dimensions_proc[0] - 1):
-            Attributes[0, 0, Index, 0] = Attributes[0, 0, Index, 0] + L_total[0] #if it comes from the first proc, te position is equal to 
+            attributes[0, 0] = attributes[0, 0] + L_total[0] #if it comes from the first proc, te position is equal to 
         if coordinates_y == (dimensions_proc[1] - 1):
-            Attributes[0, 0, Index, 1] = Attributes[0, 0, Index, 1] + L_total[1] #if it comes from the first proc, te position is equal to 
+            attributes[0, 1] = attributes[0, 1] + L_total[1] #if it comes from the first proc, te position is equal to 
         if Index not in Index_par_ghost_up_right_set:
             Index_par_ghost_up_right.append(Index)
             Index_par_ghost_up_right_set.add(Index)
@@ -1118,9 +1093,9 @@ for t in range(1, Nt+ 1):
     #      print("incoming from down right: ", incoming_from_down_right)
     for Index, attributes, aggregate in incoming_from_down_right:
         if coordinates_x == (dimensions_proc[0] - 1) :
-            Attributes[0, 0, Index, 0] = Attributes[0, 0, Index, 0] + L_total[0] #if it comes from the first proc, te position is equal to 
+            attributes[0, 0] = attributes[0, 0] + L_total[0] #if it comes from the first proc, te position is equal to 
         if coordinates_y == 0:
-            Attributes[0, 0, Index, 1] = Attributes[0, 0, Index, 1] - L_total[1] #if it comes from the first proc, te position is equal to 
+            attributes[0, 1] = attributes[0, 1] - L_total[1] #if it comes from the first proc, te position is equal to 
         if Index not in Index_par_ghost_down_right_set:
             Index_par_ghost_down_right.append(Index)
             Index_par_ghost_down_right_set.add(Index)
@@ -1137,9 +1112,9 @@ for t in range(1, Nt+ 1):
     #     print("incoming from down left: ", incoming_from_down_left)
     for Index, attributes, aggregate in incoming_from_down_left:
         if coordinates_x == 0 :
-            Attributes[0, 0, Index, 0] = Attributes[0, 0, Index, 0] - L_total[0] #if it comes from the first proc, te position is equal to 
+            attributes[0, 0] = attributes[0, 0] - L_total[0] #if it comes from the first proc, te position is equal to 
         if coordinates_y == 0:
-            Attributes[0, 0, Index, 1] = Attributes[0, 0, Index, 1] - L_total[1] #if it comes from the first proc, te position is equal to 
+            attributes[0, 1] = attributes[0, 1] - L_total[1] #if it comes from the first proc, te position is equal to 
         if Index not in Index_par_ghost_down_left_set:
             Index_par_ghost_down_left.append(Index)
             Index_par_ghost_down_left_set.add(Index)
@@ -1156,9 +1131,9 @@ for t in range(1, Nt+ 1):
     #      print("incoming from up left: ", incoming_from_up_left)
     for Index, attributes, aggregate in incoming_from_up_left:
         if coordinates_x == 0:
-            Attributes[0, 0, Index, 0] = Attributes[0, 0, Index, 0] - L_total[0] #if it comes from the first proc, te position is equal to 
+            attributes[0, 0] = attributes[0, 0] - L_total[0] #if it comes from the first proc, te position is equal to 
         if coordinates_y == (dimensions_proc[1] - 1):
-            Attributes[0, 0, Index, 1] = Attributes[0, 0, Index, 1] + L_total[1] #if it comes from the first proc, te position is equal to 
+            attributes[0, 1] = attributes[0, 1] + L_total[1] #if it comes from the first proc, te position is equal to 
         if Index not in Index_par_ghost_up_left_set:
             Index_par_ghost_up_left.append(Index)
             Index_par_ghost_up_left_set.add(Index)
