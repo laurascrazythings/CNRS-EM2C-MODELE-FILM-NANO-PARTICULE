@@ -38,19 +38,19 @@ plt.clf()
 #USER INIT
 #time - TO SET
 T = 40# seconds to change - HERE
-T_add_particles = 0.5 #time for which I add particles for - HERE
+T_add_particles = 2 #time for which I add particles for - HERE
 dt = 0.05 #delta t 
 #mp4 animation
 save_gif_animation = True # save animation as a mp4? - To SET 
 #Mesh - TO SET
-L_total = np.array([10, 10]) #Total Size in microm - HERE
+L_total = np.array([50, 50]) #Total Size in microm - HERE
 #Particles - TO SET
 position = 0 #0 for auto and 1 for manual choice
-Num_Particules = 2000 #particles to start - HERE
+Num_Particules = 6000 #particles to start - HERE
 Num_Particules_dt= 1 #particls added per second - HERE
 #TiO2 properties - rutile for now
 A_h = 6*10**(-20) #hamaker constant for rutile Tio2
-Radius_molecule = 0.02 #radius of the particule in micrometer 
+Radius_molecule = 0.01 #radius of the particule in micrometer 
 density = 4500000 #g/m3
 Molar_mass = 79.9 # we can put the molecular mass in g/mol because we are only using this value for ratio calculation
 #Velocity of particles
@@ -67,8 +67,6 @@ U_g = np.array([0, 1]) # mean gas velocity
 wall = set(); 
 wall.add(2)
 wall.add(3)
-wall.add(0)
-wall.add(1)
 #adhering ?: is the wall adhering?  #0 for right, 1 for left, 2 for up, 3 for bottom, 4 for none
 adhere = set() 
 adhere.add(2)
@@ -309,9 +307,10 @@ for t in range(1, Nt+ 1):
     
     if t*dt <= T_add_particles:
         Attributes[4, :, Num_Particules : (Num_Particules + Num_Particules_dt), :] = 1
-        Added_par_stack = Attributes[4, :, :, :].reshape(-1, 2)
+       
         Num_Particules = Num_Particules + Num_Particules_dt       
         #update the transparent particules
+    
         
     Particle_info_right = [] #list of particles to send to the right 
     Particle_info_left = [] #list of particles to send to the left
@@ -329,6 +328,7 @@ for t in range(1, Nt+ 1):
         Vp_stack = Attributes[1,:,:,:].reshape(-1, 2)
         Cg_stack = Attributes[2,:,:,:].reshape(-1, 2)
         Mass_stack = Attributes[3,:,:,:].reshape(-1, 2)
+        Added_par_stack = Attributes[4, :, :, :].reshape(-1, 2)
         
         
         while dt_left > 0 :
@@ -573,7 +573,7 @@ for t in range(1, Nt+ 1):
         for par_down_right in reversed(range(len(Index_par_ghost_down_right))):
             Index = Index_par_ghost_down_right[par_down_right] #index of the particule in the ghost down right area
             Position_x = Attributes[0, 5, Index, 0]
-            Position_y = Attributes[0, 5, Index, 0]
+            Position_y = Attributes[0, 5, Index, 1]
             #3 cases in 2d
             #forward or down - down right to leave
             # down or right - leaves
@@ -659,7 +659,6 @@ for t in range(1, Nt+ 1):
             # up or left - leaves
             if Position_y > Local_ghost_up or Position_x < Local_ghost_left:
                 #leaves the proc area
-                Attributes[:, 8, Index, :] = Attributes[:, 7, Index, :].copy() #update the local position of the particule, its velocity and all
                 Attributes[:, 7, Index, :] = [0, 0] #remove the attributes to this position
                 Index_par_ghost_up_left.pop(par_up_left) #Index of the new particule added
                 Index_par_ghost_up_left_set.discard(Index)
@@ -728,7 +727,7 @@ for t in range(1, Nt+ 1):
                 Local_sent [Index, 2] = True
                 #left of the right
                 Particle_info_right.append((Index, Attributes[:, 8, Index, :].copy(), Aggregate_set[Index].copy())) # index, position, velocity
-                Local_sent[Index, 1] = True   
+                Local_sent[Index, 0] = True   
             #down-right
             elif (Local_down <= Position_y < (Local_down + Buffer_zone_width[1]) and Local_right > Position_x >= (Local_right - Buffer_zone_width[0]) and not(Local_right == L_total[0] and 0 in wall) and not(Local_down == 0 and 3 in wall)): 
                 #enters the up left ghost of the down right proc but also the up of the down and the left of the right
@@ -739,7 +738,7 @@ for t in range(1, Nt+ 1):
                 Local_sent [Index, 3] = True
                 #left of the right
                 Particle_info_right.append((Index, Attributes[:, 8, Index, :].copy(), Aggregate_set[Index].copy())) # index, position, velocity
-                Local_sent[Index, 1] = True
+                Local_sent[Index, 0] = True
             #down-left
             elif (Local_down < Position_y < (Local_down + Buffer_zone_width[1]) and Local_left < Position_x <= (Local_left + Buffer_zone_width[0]) and not(Local_left == 0 and 1 in wall) and not(Local_down == 0 and 3 in wall)):
                 #enters the up right ghost of the down left particle but also in the up of the down and the right of the left
@@ -750,7 +749,7 @@ for t in range(1, Nt+ 1):
                 Local_sent [Index, 3] = True
                 #right of the left
                 Particle_info_left.append((Index, Attributes[:, 8, Index, :].copy(), Aggregate_set[Index].copy())) # index, Position, velocity
-                Local_sent[Index,0] = True   
+                Local_sent[Index, 1] = True   
             #up left
             elif (Local_up > Position_y >= (Local_up - Buffer_zone_width[1]) and Local_left < Position_x <= (Local_left + Buffer_zone_width[0]) and not(Local_left == 0 and 1 in wall) and not(Local_up == L_total[1] and 2 in wall)):
                 #enters the down right ghost of the up left particle but also down of ht ep and right of the left
@@ -761,7 +760,7 @@ for t in range(1, Nt+ 1):
                 Local_sent [Index, 2] = True
                 #right of the left
                 Particle_info_left.append((Index, Attributes[:, 8, Index, :].copy(), Aggregate_set[Index].copy())) # index, Position, velocity
-                Local_sent[Index,0] = True 
+                Local_sent[Index, 1] = True 
              
                 
             #particule is leaving the local area for a ghost position    
@@ -793,7 +792,7 @@ for t in range(1, Nt+ 1):
                     Attributes[:, 1, Index, :] = Attributes[:, 8, Index, :].copy() #associate the local attributes with the ghost 
                     if Local_sent[Index, 1] == False:
                         Particle_info_left.append((Index, Attributes[:, 8, Index, :].copy(), Aggregate_set[Index].copy())) # index, Position, velocity
-                        Local_sent[Index,1] = True
+                        Local_sent[Index, 1] = True
                     Attributes[:, 8, Index, :] = [0, 0]  #set the local to 00 
                     Index_par_local.pop(par)#remove from the particle index list
                     Index_par_local_set.discard(Index)
@@ -854,7 +853,7 @@ for t in range(1, Nt+ 1):
                         Local_sent [Index, 2] = True
                         #left of the right
                         Particle_info_right.append((Index, Attributes[:, 8, Index, :].copy(), Aggregate_set[Index].copy())) # index, position, velocity
-                        Local_sent[Index, 1] = True
+                        Local_sent[Index, 0] = True
                     Attributes[:, 8, Index, :] = [0, 0]  #set the local to 00
                     Index_par_local.pop(par)#remove from the particle index list
                     Index_par_local_set.discard(Index)
@@ -886,7 +885,7 @@ for t in range(1, Nt+ 1):
                         Local_sent [Index, 3] = True
                         #left of the right
                         Particle_info_right.append((Index, Attributes[:, 8, Index, :].copy(), Aggregate_set[Index].copy())) # index, position, velocity
-                        Local_sent[Index, 1] = True
+                        Local_sent[Index, 0] = True
                     Attributes[:, 8, Index, :] = [0, 0]  #set the local to 00
                     Index_par_local.pop(par)#remove from the particle index list
                     Index_par_local_set.discard(Index)
@@ -911,7 +910,7 @@ for t in range(1, Nt+ 1):
                         Local_sent [Index, 3] = True
                         #right of the left
                         Particle_info_left.append((Index, Attributes[:, 8, Index, :].copy(), Aggregate_set[Index].copy())) # index, Position, velocity
-                        Local_sent[Index,0] = True
+                        Local_sent[Index, 1] = True
                     Attributes[:, 8, Index, :] = [0, 0]  #set the local to 00
                     Index_par_local.pop(par)#remove from the particle index list
                     Index_par_local_set.discard(Index)
@@ -936,7 +935,7 @@ for t in range(1, Nt+ 1):
                         Local_sent [Index, 2] = True
                         #right of the left
                         Particle_info_left.append((Index, Attributes[:, 8, Index, :].copy(), Aggregate_set[Index].copy())) # index, Position, velocity
-                        Local_sent[Index,0] = True
+                        Local_sent[Index, 1] = True
                     Attributes[:, 8, Index, :] = [0, 0]  #set the local to 00
                     Index_par_local.pop(par)#remove from the particle index list
                     Index_par_local_set.discard(Index)
@@ -948,7 +947,7 @@ for t in range(1, Nt+ 1):
                         Attributes[:, 8, :, :] = adhered(Index, Attributes[:, 8, :, :], Aggregate_set[Index], Local_up, "up")
                         #for all of the aggregate velocity = 0, 0, if collision the velocity remains 0?
                     
-                if Local_left == 0 or 1 in wall:
+                if Local_left == 0 and 1 in wall:
                     Attributes[:, 8, :, :] = bounced(Index, Attributes[:, 8, :, :], Aggregate_set[Index], Local_left, "left") #this function changes the velocities, center of gravity and position to propagate the 
                     
             #we are reseting the booleans at the end to ensure that the other conditions are viewed    
@@ -1152,19 +1151,20 @@ if rank == 0: #the proc 0 will receive all of the other locally saved positoins 
     for source in range(1,size): #go thru all of the proc
         XY_source_saved = cart.recv(source = source) #receive the send from the other proc
         for t in range (Nt): #going through all of the time dimension
-            for i in range(Num_Particules_end): #going through all of the particules
-                if not np.allclose(XY_source_saved[t, i, :], 0.0):#if dif than null which is 00 for now, using this instead of direct comparaison beause there might be floats
-                    if np.allclose(XY_master_saved[t, i, :], 0.0) : #if the master value is set to 00 for now 
-                        XY_master_saved[t, i, :] = XY_source_saved[t, i, :].copy() #replace the value in the master for the source value,
-                    elif not np.allclose(XY_master_saved[t, i, :], XY_source_saved[t, i, :]): # check if 2 dif value dif than 00 exist for 2 dif proc
-                        dx = XY_master_saved[t, i, 0] - XY_source_saved[t, i, 0]
-                        dy = XY_master_saved[t, i, 1] - XY_source_saved[t, i, 1]
-                        remainer_x = dx % L_total[0] 
-                        remainer_y = dy % L_total[1]
-                        if not (np.allclose(remainer_x, 0.0) or np.allclose(remainer_x, L_total[0])) and (np.allclose(remainer_y,0.0) or np.allclose(remainer_y,L_total[1])) :
-                            print("The position ",XY_source_saved[t, i, :] , " for particule ", i, " in proc: ", source, " is different than in the master at t = ", t, "\n", " which is : ", XY_master_saved[t, i, :])
-    zero = ~np.all(XY_master_saved[Nt-1,:,:] == 0., axis=1)
-    XY_count = XY_master_saved[Nt-1, zero]
+            non_zero = ~np.all(XY_source_saved[t,:,:] == 0.0, axis=1)
+            index_non_zero = np.flatnonzero(non_zero)#keep the index of the non zero to go through them only
+            for i in range(len(index_non_zero)): #going through all of the particules
+                if np.allclose(XY_master_saved[t, index_non_zero[i], :], 0.0) : #if the master value is set to 00 for now 
+                    XY_master_saved[t, index_non_zero[i], :] = XY_source_saved[t, index_non_zero[i], :].copy() #replace the value in the master for the source value,
+                elif not np.allclose(XY_master_saved[t, index_non_zero[i], :], XY_source_saved[t, index_non_zero[i], :]): # check if 2 dif value dif than 00 exist for 2 dif proc
+                    dx = XY_master_saved[t, index_non_zero[i], 0] - XY_source_saved[t, index_non_zero[i], 0]
+                    dy = XY_master_saved[t, index_non_zero[i], 1] - XY_source_saved[t, index_non_zero[i], 1]
+                    remainer_x = dx % L_total[0] 
+                    remainer_y = dy % L_total[1]
+                    if not (np.allclose(remainer_x, 0.0) or np.allclose(remainer_x, L_total[0])) and (np.allclose(remainer_y,0.0) or np.allclose(remainer_y,L_total[1])) :
+                        print("The position ",XY_source_saved[t, index_non_zero[i], :] , " for particule ", index_non_zero[i], " in proc: ", source, " is different than in the master at t = ", t, "\n", " which is : ", XY_master_saved[t, index_non_zero[i], :])
+    non_zero = ~np.all(XY_master_saved[Nt-1,:,:] == 0., axis=1)
+    XY_count = XY_master_saved[Nt-1, non_zero]
     Num_Particules_end_count = len(XY_count)
     dif_num = abs(Num_Particules_end_count - Num_Particules_end)                               
     if  dif_num != 0:
@@ -1266,7 +1266,7 @@ if rank == 0:
     print("For ", size, ", the runtime before the mp4 is: ", t1 - t0)
     print("For ", size, ", the runtime with the mp4 is : ", t2 - t0)
        
-MPI.Finalize # stop the parallelization
+MPI.Finalize() # stop the parallelization
 
 
 
