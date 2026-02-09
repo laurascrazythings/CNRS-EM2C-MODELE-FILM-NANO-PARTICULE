@@ -37,7 +37,7 @@ plt.clf()
 
 #USER INIT
 #time - TO SET
-T = 40# seconds to change - HERE
+T = 60# seconds to change - HERE
 T_add_particles = 2 #time for which I add particles for - HERE
 dt = 0.05 #delta t 
 #mp4 animation
@@ -46,11 +46,11 @@ save_gif_animation = True # save animation as a mp4? - To SET
 L_total = np.array([50, 50]) #Total Size in microm - HERE
 #Particles - TO SET
 position = 0 #0 for auto and 1 for manual choice
-Num_Particules = 6000 #particles to start - HERE
-Num_Particules_dt= 1 #particls added per second - HERE
+Num_Particules = 2000#particles to start - HERE
+Num_Particules_dt= 0 #particls added per second - HERE
 #TiO2 properties - rutile for now
 A_h = 6*10**(-20) #hamaker constant for rutile Tio2
-Radius_molecule = 0.01 #radius of the particule in micrometer 
+Radius_molecule = 0.03 #radius of the particule in micrometer 
 density = 4500000 #g/m3
 Molar_mass = 79.9 # we can put the molecular mass in g/mol because we are only using this value for ratio calculation
 #Velocity of particles
@@ -108,7 +108,6 @@ if rank == 1 : #do not overload proc 0, need the if so that the rand doesnt run 
     left_over_x = num_X - int(num_X)
     num_Y = L_total[1] / (2 * Radius_molecule)
     left_over_y = num_Y - int(num_Y)
-    
     add_num_Y = int(Buffer_zone_width[1] / (2 * Radius_molecule))#same but in the buffer or ghost zone really for the additional particles, they are generated at the start
     X_possible = np.arange(Starting_X, num_X + 1 - Starting_X) + 0.5 * left_over_x
     Y_possible = np.arange(Starting_Y, num_Y + 1 - Starting_Y) + 0.5 * left_over_y
@@ -134,17 +133,22 @@ if rank == 1 : #do not overload proc 0, need the if so that the rand doesnt run 
     #register the transparent particles: the ones that are not displayed yet
     Added_par = np.zeros((Num_Particules_end)) 
     Added_par[:Num_Particules] = 1 #1 equals true  
+    
+    #create the random xi values for the brownian now so we an broadcast them and have a common value for them
+    xi = np.random.randn(Nt, Num_Particules_end, 2)
 else: 
     XY_start = None
     Vp = None
     Added_par = None
     Buffer_zone_width = None
+    xi = None
     
 #broadcast the values to the different procs
 XY_start = cart.bcast(XY_start, root = 1)
 Vp = cart.bcast(Vp, root = 1)
 Added_par = cart.bcast(Added_par, root = 1)
 Buffer_zone_width = cart.bcast(Buffer_zone_width, root = 1)
+xi = cart.bcast(xi, root = 1)
 # #Buffer depends on the velocity of the particule, more than 2 to ensure that a particule pings twice 
 
 #Each Proc's boundary - DO NOT TOUCH
@@ -296,18 +300,30 @@ Local_sent = np.zeros((Num_Particules_end, 8), dtype = bool) #[:,0] : right; [:,
 
 
 #time loop to update the map
-for t in range(1, Nt+ 1):
-    #update the velocities to match a brownian motion, we chose to go with the ornstein uhlenbeck implementation on speed
-    xi = np.random.randn(2)  # Gaussian noise 
-    #if Vp != 0.0 :  (doesnt work with aggregates bcause the velocities are dependant)
+for t in range(1, Nt + 1):
+    #modify xi depending on the aggregate to have the same value for the aggregate lists
+    for i in range(Num_Particules_end):
+        if len(Aggregate_set[i]) > 1: #1 2 3 4 5 
+            Avg_Brownian = np.zeros(2) #initiate the avg 
+            for k in Aggregate_set[i]: #go through all the 
+                Avg_Brownian = Avg_Brownian + xi[t - 1, k, :]
+            Avg_Brownian = Avg_Brownian / len(Aggregate_set[i])    
+            xi[t - 1, i, :] = Avg_Brownian
+    # #update the velocities to match a brownian motion, we chose to go with the ornstein uhlenbeck implementation on speed
+    non_zero_gaussian = ~np.all(Attributes[1,:,:,:] == 0.0)
+    index_non_zero_gaussian = np.flatnonzero(non_zero_gaussian)
+    # for i in range(len(index_non_zero_gaussian)):
+    #     idx = index_non_zero_gaussian[i]
+    #     first_value = min(Aggregate_set[idx])
+    #     xi[t - 1, idx, :] = xi[t - 1, first_value, :]
+    Attributes[1,:, index_non_zero_gaussian, :] = Attributes[1, :, index_non_zero_gaussian, :] - (Attributes[1, :, index_non_zero_gaussian, :] - U_g) * (dt/tau) + np.sqrt(B * dt) * xi[t-1, index_non_zero_gaussian, :][:, None, :]
+    # #if Vp != 0.0 :  (doesnt work with aggregates bcause the velocities are dependant)
     #     Vp_proc[8,:,:] = Vp_proc[8,:,:] - ((Vp_proc[8,:,:] - U_g) * (dt/tau) + np.sqrt(B * dt) * xi)
     if rank == 0 and ((t * dt) % 2 ) == 0 :
         print(t*dt)
       #particles are getting added, add a certain number of particles, I have decided to do a boolean that changes value depending on the rate at which we add particle. The particle are "invisible" or at least wont move position until they are able to
-    
     if t*dt <= T_add_particles:
         Attributes[4, :, Num_Particules : (Num_Particules + Num_Particules_dt), :] = 1
-       
         Num_Particules = Num_Particules + Num_Particules_dt       
         #update the transparent particules
     
@@ -352,7 +368,7 @@ for t in range(1, Nt+ 1):
                                                                                                  Index_par_local_set, Index_par_ghost_right_set, Index_par_ghost_left_set, Index_par_ghost_up_set, Index_par_ghost_down_set, 
                                                                                                  Index_par_ghost_up_right_set, Index_par_ghost_down_right_set, Index_par_ghost_down_left_set, Index_par_ghost_up_left_set)
                     else:
-                        XY_stack, Vp_stack, Cg_stack, Aggregate_set = update_particles_aggregation(XY_stack, Vp_stack, First_collision, t_collision, Added_par_stack, Radius_molecule, Mass_stack, Num_Particules_end, Aggregate_set, Cg_stack, Attributes, 
+                        XY_stack, Vp_stack, Cg_stack, Aggregate_set = update_particles_aggregation(XY_stack, Vp_stack, First_collision, t_collision, Added_par_stack, Radius_molecule, Mass_stack, Num_Particules_end, Aggregate_set, Cg_stack, Attributes,
                                                                                                    Index_par_local_set, Index_par_ghost_right_set, Index_par_ghost_left_set, Index_par_ghost_up_set, Index_par_ghost_down_set, 
                                                                                                    Index_par_ghost_up_right_set, Index_par_ghost_down_right_set, Index_par_ghost_down_left_set, Index_par_ghost_up_left_set)
                     dt_left = dt_left - t_collision
@@ -1197,9 +1213,24 @@ def radius_to_s(ax, Radius):
 #printing and ploting
 if rank == 0:
     
+    #plot the end surface aggregate
+    surface_aggregate, axis = plt.subplots()
+    axis.set_xlim(0, 20)
+    axis.set_ylim(L_total[1] - 1, L_total[1]) #just want to see the top part
+    axis.set_xlabel("x (µm)")
+    axis.set_ylabel("y (µm)")
+    si = radius_to_s(axis, Radius_molecule) # understandable size of particles - good scale
+    plot = axis.scatter(XY_master_saved[Nt - 1, :, 0].copy(), XY_master_saved[Nt - 1, :, 1].copy(), s = si ) #plot itself
+    title_plot = axis.set_title(f"Surface aggregation at t = {t}") #title
+    axis.set_aspect("equal", adjustable="box")  #realistic aspect ratio
+    surface_aggregate.tight_layout()
+    surface_aggregate.savefig("surface_aggregation.png", dpi = 500, bbox_inches = "tight")
+    plt.close(surface_aggregate) #close so that it doesnt count in the runtime.
+    
+    
     # plot
     # --- Figure and initial scatter ---
-    fig, ax = plt.subplots()
+    fig, ax = plt.subplots(figsize=(12, 8), dpi=200)
     # Set domain to your physical box
     ax.set_xlim(0, L_total[0])
     ax.set_ylim(0, L_total[1])
@@ -1255,7 +1286,11 @@ if rank == 0:
     # --- Create animation ---  #change to have n particules 
     ani = FuncAnimation( fig, update, frames = frames, interval=1000/fps, blit = False)
     if save_gif_animation:
-        writer = FFMpegWriter(fps=fps,codec="libx264",bitrate=1800)
+        writer = FFMpegWriter(fps = fps, codec = "libx264", bitrate = -1, extra_args=[
+            "-preset", "slow",        # better compression at same quality
+            "-crf", "17",             # high quality (try 16–18)
+            "-pix_fmt", "yuv420p"     # compatibility
+        ])
         ani.save("particle_animation.mp4", writer=writer)
         
     
