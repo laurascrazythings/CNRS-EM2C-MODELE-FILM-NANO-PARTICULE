@@ -37,7 +37,7 @@ plt.clf()
 
 #USER INIT
 #time - TO SET
-T = 150# seconds to change - HERE
+T = 40# seconds to change - HERE
 T_add_particles = 2 #time for which I add particles for - HERE
 dt = 0.05 #delta t 
 #mp4 animation
@@ -46,8 +46,8 @@ save_gif_animation = True # save animation as a mp4? - To SET
 L_total = np.array([100, 100]) #Total Size in microm - HERE
 #Particles - TO SET
 position = 0 #0 for auto and 1 for manual choice
-Num_Particules = 20000#particles to start - HERE
-Num_Particules_dt= 1 #particls added per second - HERE
+Num_Particules = 2000#particles to start - HERE
+Num_Particules_dt= 0 #particls added per second - HERE
 #TiO2 properties - rutile for now
 A_h = 6*10**(-20) #hamaker constant for rutile Tio2
 Radius_molecule = 0.02 #radius of the particule in micrometer 
@@ -1192,12 +1192,17 @@ for t in range(1, Nt + 1):
             
     XY_local_saved[t - 1, :, :] = Attributes[0, 8, :, :].copy() #save the updated values 
     
-#saving the values of the local particles 
-if rank == 0: #the proc 0 will receive all of the other locally saved positoins of particles
-    XY_master_saved = XY_local_saved.copy() #first let's say that the master positions is proc 0s and add the different position if dif than 00
-    #I want to add the values dif than 0 from XY_source saved to the XY_master_saved to save the particle movment 
-    for source in range(1,size): #go thru all of the proc
-        XY_source_saved = cart.recv(source = source) #receive the send from the other proc
+list_ranks = list(range(size))
+XY_master_saved = XY_local_saved.copy()
+while len(list_ranks) > 1:
+    list_ranks_master = list_ranks[0::2] #even index
+    list_ranks_source = list_ranks[1::2] #uneven index
+    #saving the values of the local particles 
+    if rank in list_ranks_master: #the proc 0 will receive all of the other locally saved positoins of particles
+        #XY_master_saved = XY_local_saved.copy() #first let's say that the master positions is proc 0s and add the different position if dif than 00
+        #I want to add the values dif than 0 from XY_source saved to the XY_master_saved to save the particle movment 
+        source = list_ranks[list_ranks.index(rank) + 1]
+        XY_source_saved = cart.recv(source = source ) #receive the send from the other proc
         for t in range (Nt): #going through all of the time dimension
             non_zero = ~np.all(XY_source_saved[t,:,:] == 0.0, axis=1)
             index_non_zero = np.flatnonzero(non_zero)#keep the index of the non zero to go through them only
@@ -1210,16 +1215,21 @@ if rank == 0: #the proc 0 will receive all of the other locally saved positoins 
                     remainer_x = dx % L_total[0] 
                     remainer_y = dy % L_total[1]
                     if not (np.allclose(remainer_x, 0.0) or np.allclose(remainer_x, L_total[0])) and (np.allclose(remainer_y,0.0) or np.allclose(remainer_y,L_total[1])) :
-                        print("The position ",XY_source_saved[t, index_non_zero[i], :] , " for particule ", index_non_zero[i], " in proc: ", source, " is different than in the master at t = ", t, "\n", " which is : ", XY_master_saved[t, index_non_zero[i], :])
+                        print("The position ",XY_source_saved[t, index_non_zero[i], :] , " for particule ", index_non_zero[i], " in proc: ", source, " is different than in the master at t = ", t, "\n", " which is : ", XY_master_saved[t, index_non_zero[i], :])        
+    elif rank in list_ranks_source:
+        dest = list_ranks[list_ranks.index(rank) - 1]
+        cart.send(XY_master_saved, dest = dest)
+    list_ranks = list_ranks_master
+    comm.barrier()
+    
+print(rank)
+if rank == 0:
     non_zero = ~np.all(XY_master_saved[Nt-1,:,:] == 0., axis=1)
     XY_count = XY_master_saved[Nt-1, non_zero]
     Num_Particules_end_count = len(XY_count)
     dif_num = abs(Num_Particules_end_count - Num_Particules_end)                               
     if  dif_num != 0:
-        print("OH NO, there are ", dif_num," missing particles ")       
-else :
-    cart.send(XY_local_saved, dest = 0)
-
+        print("OH NO, there are ", dif_num," missing particles ")
 
 #WAIT ON THE OTHER PROC TO FINISH
 comm.Barrier()
@@ -1325,7 +1335,6 @@ if rank == 0:
         ])
         ani.save("particle_animation.mp4", writer=writer)
         
-    
 
     plt.close(fig)#not showing but saving
     #time print
