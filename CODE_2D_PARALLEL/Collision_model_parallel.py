@@ -37,20 +37,20 @@ plt.clf()
 
 #USER INIT
 #time - TO SET
-T = 40# seconds to change - HERE
+T = 100# seconds to change - HERE
 T_add_particles = 2 #time for which I add particles for - HERE
 dt = 0.05 #delta t 
 #mp4 animation
-save_gif_animation = True # save animation as a mp4? - To SET 
+save_gif_animation = True# save animation as a mp4? - To SET 
 #Mesh - TO SET
-L_total = np.array([100, 100]) #Total Size in microm - HERE
+L_total = np.array([30, 30]) #Total Size in microm - HERE
 #Particles - TO SET
 position = 0 #0 for auto and 1 for manual choice
 Num_Particules = 2000#particles to start - HERE
-Num_Particules_dt= 0 #particls added per second - HERE
+Num_Particules_dt= 0 #particls added per second - HERE #can only add particles if the bottom wall is bouncy and not following periodical condition.
 #TiO2 properties - rutile for now
 A_h = 6*10**(-20) #hamaker constant for rutile Tio2
-Radius_molecule = 0.02 #radius of the particule in micrometer 
+Radius_molecule = 0.07 #radius of the particule in micrometer 
 density = 4500000 #g/m3
 Molar_mass = 79.9 # we can put the molecular mass in g/mol because we are only using this value for ratio calculation
 #Velocity of particles
@@ -62,11 +62,11 @@ Highest_x_velocity = 1
 tau = 1.0 # relaxation time for Ornstein Uhlenbeck, chosen as 1 for now 
 B = 0.5 # noise intensity
 #Gas velocity
-U_g = np.array([0, 1]) # mean gas velocity
+U_g = np.array([0, 5]) # mean gas velocity
 #walls : is there a wall, #0 for right, 1 for left, 2 for up, 3 for bottom, 4 for none, if none periodical condition
 wall = set(); 
 wall.add(2)
-wall.add(3)
+wall.add(3) #bottom wall
 #adhering ?: is the wall adhering?  #0 for right, 1 for left, 2 for up, 3 for bottom, 4 for none
 adhere = set() 
 adhere.add(2)
@@ -77,8 +77,7 @@ Lx, Ly = L_total # dimensions of the domain
 Px, Py = dimensions_proc #neded to set the lines later 
 #total number of particles by the end to create the right arrays and not resize(costly) - DO NOT TOUCH
 Num_Particules_start = Num_Particules
-Num_Particules_end = int(Num_Particules +  Num_Particules_dt * (T_add_particles /dt))
-
+Num_Particules_end = int(Num_Particules +  (Num_Particules_dt * (T_add_particles /dt)))
 #define the charatcters of the particles
 Volume = 4/3 * np.pi * (Radius_molecule*10**(-6))**3
 Mass_one_particle = density * Volume * 10**(12) #picograms
@@ -91,14 +90,14 @@ if rank == 1 : #do not overload proc 0, need the if so that the rand doesnt run 
     if position == 0:
         Vp[:, 0] = np.random.uniform(low = Lowest_x_velocity, high = Highest_x_velocity, size = Num_Particules_end) # random x velocity, as the particles enter in the y direction , the whole set is random
         Vp[:Num_Particules, 1] = np.random.uniform(low = Lowest_velocity, high = Highest_velocity, size = Num_Particules)#the particle that start are random in y
-        Vp[Num_Particules: Num_Particules_end, 1] = np.random.uniform(low = 0, high = Highest_velocity, size = Num_Particules_end - Num_Particules) #the particle that are added have a y direction that goes in the domain
+        Vp[Num_Particules: Num_Particules_end, 1] = np.random.uniform(low = 0.2, high = Highest_velocity, size = Num_Particules_end - Num_Particules) #the particle that are added have a y direction that goes in the domain
     elif position == 1:
         Vp[:, 0] = 0, 0
         Vp[:, 1] = 1, 0.25
         
     #position rand - position after to ensure that the position the particules can be on arent in the 0 to buffer are where it would not be able to be sent periodically 
     XY_start = np.zeros((Num_Particules_end,2)) #particule start position 
-    #the particle cannot touch at init, would break the code fro collision, they wouldnt collide basically
+    #the particle cannot touch at init, would break the code from collision, they wouldnt collide basically
     maximum_velocity = np.sqrt(np.max(np.abs(Vp[:,0]))**(2) + np.max(np.abs(Vp[:,1]))**(2))
     #The particle can't start in the last bufferzone. it wont be able to be updated, there is only border control no spawn control taking into account the perodical condition
     Buffer_zone_width = np.array([maximum_velocity * dt* 2.01, (maximum_velocity + U_g[1]) * dt * 2.01]) #Buffer depends on the velocity of the particule, more than 2 to ensure that a particule pings twice 
@@ -108,14 +107,18 @@ if rank == 1 : #do not overload proc 0, need the if so that the rand doesnt run 
     left_over_x = num_X - int(num_X)
     num_Y = L_total[1] / (2 * Radius_molecule)
     left_over_y = num_Y - int(num_Y)
-    add_num_Y = int(Buffer_zone_width[1] / (2 * Radius_molecule))#same but in the buffer or ghost zone really for the additional particles, they are generated at the start
+    
+    add_num_Y = int((Buffer_zone_width[1] + Radius_molecule) / (2 * Radius_molecule))#same but in the buffer or ghost zone really for the additional particles, they are generated at the start
     X_possible = np.arange(Starting_X, num_X + 1 - Starting_X) + 0.5 * left_over_x
     Y_possible = np.arange(Starting_Y, num_Y + 1 - Starting_Y) + 0.5 * left_over_y
-    Add_Y_possible = np.arange(-add_num_Y, -1)
+    if 3 in wall :
+        Add_Y_possible = np.arange(-3 , 0)
+    else :
+        Add_Y_possible = np.arange(-3 , 0)
     X, Y = np.meshgrid(X_possible, Y_possible)
     X_add, Y_add = np.meshgrid(X_possible, Add_Y_possible)
-    possible_position = (((np.stack((X, Y), axis = -1 ) * 2 * Radius_molecule) - Radius_molecule)  ).reshape(-1, 2)
-    additional_position = (np.stack((X_add, Y_add), axis = -1 ) * 2 * Radius_molecule - Radius_molecule).reshape(-1, 2)
+    possible_position = (((np.stack((X, Y), axis = -1 ) * 2 * Radius_molecule) + Radius_molecule)).reshape(-1, 2)
+    additional_position = (((np.stack((X_add, Y_add), axis = -1 ) * 2 * Radius_molecule) + Radius_molecule)).reshape(-1, 2)
 
     #for the particles being added through the simulation time, we are going to initiate them at the same tie thant the others for better run time
     #they are going to be stocked where they spawn (at the bottom for now but can easily be changed)
@@ -1194,6 +1197,8 @@ for t in range(1, Nt + 1):
     
 list_ranks = list(range(size))
 XY_master_saved = XY_local_saved.copy()
+t3 = time.perf_counter()
+
 while len(list_ranks) > 1:
     list_ranks_master = list_ranks[0::2] #even index
     list_ranks_source = list_ranks[1::2] #uneven index
@@ -1201,39 +1206,44 @@ while len(list_ranks) > 1:
     if rank in list_ranks_master: #the proc 0 will receive all of the other locally saved positoins of particles
         #XY_master_saved = XY_local_saved.copy() #first let's say that the master positions is proc 0s and add the different position if dif than 00
         #I want to add the values dif than 0 from XY_source saved to the XY_master_saved to save the particle movment 
-        source = list_ranks[list_ranks.index(rank) + 1]
-        XY_source_saved = cart.recv(source = source ) #receive the send from the other proc
-        for t in range (Nt): #going through all of the time dimension
-            non_zero = ~np.all(XY_source_saved[t,:,:] == 0.0, axis=1)
-            index_non_zero = np.flatnonzero(non_zero)#keep the index of the non zero to go through them only
-            for i in range(len(index_non_zero)): #going through all of the particules
-                if np.allclose(XY_master_saved[t, index_non_zero[i], :], 0.0) : #if the master value is set to 00 for now 
-                    XY_master_saved[t, index_non_zero[i], :] = XY_source_saved[t, index_non_zero[i], :].copy() #replace the value in the master for the source value,
-                elif not np.allclose(XY_master_saved[t, index_non_zero[i], :], XY_source_saved[t, index_non_zero[i], :]): # check if 2 dif value dif than 00 exist for 2 dif proc
-                    dx = XY_master_saved[t, index_non_zero[i], 0] - XY_source_saved[t, index_non_zero[i], 0]
-                    dy = XY_master_saved[t, index_non_zero[i], 1] - XY_source_saved[t, index_non_zero[i], 1]
-                    remainer_x = dx % L_total[0] 
-                    remainer_y = dy % L_total[1]
-                    if not (np.allclose(remainer_x, 0.0) or np.allclose(remainer_x, L_total[0])) and (np.allclose(remainer_y,0.0) or np.allclose(remainer_y,L_total[1])) :
-                        print("The position ",XY_source_saved[t, index_non_zero[i], :] , " for particule ", index_non_zero[i], " in proc: ", source, " is different than in the master at t = ", t, "\n", " which is : ", XY_master_saved[t, index_non_zero[i], :])        
+        if list_ranks.index(rank) + 1 < size:
+            source = list_ranks[list_ranks.index(rank) + 1]
+            XY_source_saved = cart.recv(source = source ) #receive the send from the other proc
+            for t in range (Nt): #going through all of the time dimension
+                non_zero = ~np.all(XY_source_saved[t,:,:] == 0.0, axis = 1)
+                index_non_zero = np.flatnonzero(non_zero)#keep the index of the non zero to go through them only
+                for i in range(len(index_non_zero)): #going through all of the particules
+                    if np.allclose(XY_master_saved[t, index_non_zero[i], :], 0.0) : #if the master value is set to 00 for now 
+                        XY_master_saved[t, index_non_zero[i], :] = XY_source_saved[t, index_non_zero[i], :].copy() #replace the value in the master for the source value,
+                    elif not np.allclose(XY_master_saved[t, index_non_zero[i], :], XY_source_saved[t, index_non_zero[i], :]): # check if 2 dif value dif than 00 exist for 2 dif proc
+                        dx = XY_master_saved[t, index_non_zero[i], 0] - XY_source_saved[t, index_non_zero[i], 0]
+                        dy = XY_master_saved[t, index_non_zero[i], 1] - XY_source_saved[t, index_non_zero[i], 1]
+                        remainer_x = dx % L_total[0] 
+                        remainer_y = dy % L_total[1]
+                        if not (np.allclose(remainer_x, 0.0) or np.allclose(remainer_x, L_total[0])) and (np.allclose(remainer_y,0.0) or np.allclose(remainer_y,L_total[1])) :
+                            print("The position ",XY_source_saved[t, index_non_zero[i], :] , " for particule ", index_non_zero[i], " in proc: ", source, " is different than in the master at t = ", t, "\n", " which is : ", XY_master_saved[t, index_non_zero[i], :])        
     elif rank in list_ranks_source:
         dest = list_ranks[list_ranks.index(rank) - 1]
         cart.send(XY_master_saved, dest = dest)
     list_ranks = list_ranks_master
-    comm.barrier()
-    
+
 print(rank)
+comm.barrier()
+ 
 if rank == 0:
-    non_zero = ~np.all(XY_master_saved[Nt-1,:,:] == 0., axis=1)
-    XY_count = XY_master_saved[Nt-1, non_zero]
+    non_zero = ~np.all(XY_master_saved[Nt - 1, :, :] ==  0.,  axis = 1)
+    XY_count = XY_master_saved[Nt - 1, non_zero]
     Num_Particules_end_count = len(XY_count)
     dif_num = abs(Num_Particules_end_count - Num_Particules_end)                               
     if  dif_num != 0:
         print("OH NO, there are ", dif_num," missing particles ")
+        
+    is_zero = np.all(XY_master_saved[Nt - 1, :, :] ==  0.0, axis=1)
+    idx_missing = np.flatnonzero(is_zero)
+    print("Missing indices:", idx_missing[:20], " ... total:", idx_missing.size)
+    print("Example values:", XY_master_saved[Nt-1, idx_missing[:5], :])
 
-#WAIT ON THE OTHER PROC TO FINISH
-comm.Barrier()
-t1 = time.perf_counter()
+    t1 = time.perf_counter()
 
 #function to have the display particles be of comparable size
 def radius_to_s(ax, Radius):
@@ -1254,10 +1264,11 @@ def radius_to_s(ax, Radius):
 
 #printing and ploting
 if rank == 0:
-    
+    print("For ", size, ", the runtime before the merge is: ", t3 - t0)
+    print("For ", size, ", the runtime before the mp4 is: ", t1 - t0)
     #plot the end surface aggregate
     surface_aggregate, axis = plt.subplots()
-    axis.set_xlim(0, 20)
+    axis.set_xlim(0, 30)
     axis.set_ylim(L_total[1] - 1, L_total[1]) #just want to see the top part
     axis.set_xlabel("x (µm)")
     axis.set_ylabel("y (µm)")
@@ -1339,7 +1350,7 @@ if rank == 0:
     plt.close(fig)#not showing but saving
     #time print
     t2 = time.perf_counter()
-    print("For ", size, ", the runtime before the mp4 is: ", t1 - t0)
+    
     print("For ", size, ", the runtime with the mp4 is : ", t2 - t0)
        
 MPI.Finalize() # stop the parallelization
