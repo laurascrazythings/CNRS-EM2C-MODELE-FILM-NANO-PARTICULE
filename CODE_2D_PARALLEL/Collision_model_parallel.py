@@ -37,22 +37,22 @@ plt.clf()
 
 #USER INIT
 #time - TO SET
-T = 100# seconds to change - HERE
+T = 80# seconds to change - HERE
 T_add_particles = 2 #time for which I add particles for - HERE
 dt = 0.05 #delta t 
 #mp4 animation
 save_gif_animation = True# save animation as a mp4? - To SET 
 #Mesh - TO SET
-L_total = np.array([30, 30]) #Total Size in microm - HERE
+L_total = np.array([100, 100]) #Total Size in microm - HERE
 #Particles - TO SET
 position = 0 #0 for auto and 1 for manual choice
-Num_Particules = 2000#particles to start - HERE
+Num_Particules = 4000#particles to start - HERE
 Num_Particules_dt= 0 #particls added per second - HERE #can only add particles if the bottom wall is bouncy and not following periodical condition.
 #TiO2 properties - rutile for now
 A_h = 6*10**(-20) #hamaker constant for rutile Tio2
-Radius_molecule = 0.07 #radius of the particule in micrometer 
+Radius_molecule = 0.03 #radius of the particule in micrometer 
 density = 4500000 #g/m3
-Molar_mass = 79.9 # we can put the molecular mass in g/mol because we are only using this value for ratio calculation
+Molar_mass = 79.9 # in g/mol 
 #Velocity of particles
 Highest_velocity = 1 #velocity of the particle
 Lowest_velocity = 0.01
@@ -365,8 +365,8 @@ for t in range(1, Nt + 1):
                     idx = np.argmin(t_collisions)
                     First_collision = Colliding_pairs[idx]#first colliding pair
                     t_collision = t_collisions[idx] #time fo first collision
-                    link = np.random.rand(1)
-                    if link > 0.5 :
+                    link = np.random.rand(1) 
+                    if np.sqrt((np.abs(Vp_stack[First_collision[0],0] - Vp_stack[First_collision[1],0]))**(2) + (np.abs(Vp_stack[First_collision[0],1] - Vp_stack[First_collision[1],1]))**(2)) > 1.5 :
                         XY_stack, Vp_stack, Cg_stack, Aggregate_set = update_particles_collision(XY_stack, Vp_stack, First_collision, t_collision, Added_par_stack, Radius_molecule, Mass_stack, Num_Particules_end, Aggregate_set, Cg_stack, Attributes,
                                                                                                  Index_par_local_set, Index_par_ghost_right_set, Index_par_ghost_left_set, Index_par_ghost_up_set, Index_par_ghost_down_set, 
                                                                                                  Index_par_ghost_up_right_set, Index_par_ghost_down_right_set, Index_par_ghost_down_left_set, Index_par_ghost_up_left_set)
