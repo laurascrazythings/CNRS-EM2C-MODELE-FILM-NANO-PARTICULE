@@ -11,6 +11,10 @@ import time
 from matplotlib.animation import FuncAnimation, FFMpegWriter #animation
 from scipy.spatial import cKDTree #spatial tree to do a broad search
 from particle_interactions import update_particles_aggregation, update_particles_collision, broad_detect, narrow_detect, bounced, adhered
+import json, argparse
+
+
+
 
 #SCRIPT
 
@@ -35,41 +39,76 @@ up_left = cart.Get_cart_rank([coordinates_x - 1, coordinates_y + 1])
 #initialize the plot
 plt.clf() 
 
+ap = argparse.ArgumentParser()
+ap.add_argument("--config")
+args = ap.parse_args()
+
 #USER INIT
 #time - TO SET
-T = 80# seconds to change - HERE
-T_add_particles = 2 #time for which I add particles for - HERE
-dt = 0.05 #delta t 
+if rank == 0:
+    with open(args.config, "r") as f:
+        params = json.load(f)
+else:
+    params = None
+    
+params = cart.bcast(params, root = 0)
+
+T = params["Tsim"] # seconds to change - HERE
+T_add_particles = params["T_add"] #time for which I add particles for - HERE
+dt = params["dt"] #delta t 
 #mp4 animation
-save_gif_animation = True# save animation as a mp4? - To SET 
+save_gif_animation = params["Video"] # save animation as a mp4? - To SET 
+end_plot = params["End_Plot"]
 #Mesh - TO SET
-L_total = np.array([100, 100]) #Total Size in microm - HERE
+L_X = params["Lx"]
+L_Y = params["Ly"]
+L_total = np.array([L_X, L_Y]) #Total Size in microm - HERE
 #Particles - TO SET
 position = 0 #0 for auto and 1 for manual choice
-Num_Particules = 4000#particles to start - HERE
-Num_Particules_dt= 0 #particls added per second - HERE #can only add particles if the bottom wall is bouncy and not following periodical condition.
+Num_Particules = params["Np"] #particles to start - HERE
+Num_Particules_dt= params["Np_dt"] #particls added per second - HERE #can only add particles if the bottom wall is bouncy and not following periodical condition.
 #TiO2 properties - rutile for now
-A_h = 6*10**(-20) #hamaker constant for rutile Tio2
-Radius_molecule = 0.03 #radius of the particule in micrometer 
-density = 4500000 #g/m3
-Molar_mass = 79.9 # in g/mol 
+A_h = params["Hamaker"] #hamaker constant for rutile Tio2
+Radius_molecule = params["Rad_particle"] #radius of the particule in micrometer 
+density = params["Density_particle"] #g/m3
+Molar_mass = params["Molar_mass_particle"] # in g/mol 
 #Velocity of particles
-Highest_velocity = 1 #velocity of the particle
-Lowest_velocity = 0.01
-Lowest_x_velocity = -1
-Highest_x_velocity = 1
+Highest_velocity = params["High_Particle_Y_Velocity"] #velocity of the particle
+Lowest_velocity = params["Low_Particle_Y_Velocity"]
+Lowest_x_velocity = params["Low_Particle_X_Velocity"]
+Highest_x_velocity = params["High_Particle_X_Velocity"]
 #Brownian
-tau = 1.0 # relaxation time for Ornstein Uhlenbeck, chosen as 1 for now 
-B = 0.5 # noise intensity
+tau = params["Tau"] # relaxation time for Ornstein Uhlenbeck, chosen as 1 for now 
+B = params["B"] # noise intensity
 #Gas velocity
-U_g = np.array([0, 5]) # mean gas velocity
+U_g_x = params["Air_X_Velocity"]
+U_g_y = params["Air_Y_Velocity"]
+U_g = np.array([U_g_x, U_g_y]) # mean gas velocity
 #walls : is there a wall, #0 for right, 1 for left, 2 for up, 3 for bottom, 4 for none, if none periodical condition
-wall = set(); 
-wall.add(2)
-wall.add(3) #bottom wall
-#adhering ?: is the wall adhering?  #0 for right, 1 for left, 2 for up, 3 for bottom, 4 for none
-adhere = set() 
-adhere.add(2)
+wall = set()
+adhere = set()
+left_wall = params["Left_W"]
+right_wall = params["Right_W"]
+up_wall = params["Up_W"]
+down_wall = params["Down_W"]
+up_adhesion = params["Up_A"]
+
+
+if right_wall:
+    wall.add(0)
+    
+if left_wall:
+    wall.add(1)
+
+if up_wall:
+    wall.add(2)
+
+if down_wall:
+    wall.add(3)
+
+if up_adhesion:
+    adhere.add(2)
+
 
 # init var - DO NOT TOUCH
 Nt = int(T/ dt) #num of Iterations
@@ -1206,7 +1245,7 @@ while len(list_ranks) > 1:
     if rank in list_ranks_master: #the proc 0 will receive all of the other locally saved positoins of particles
         #XY_master_saved = XY_local_saved.copy() #first let's say that the master positions is proc 0s and add the different position if dif than 00
         #I want to add the values dif than 0 from XY_source saved to the XY_master_saved to save the particle movment 
-        if list_ranks.index(rank) + 1 < size:
+        if (list_ranks.index(rank)) < (len(list_ranks) - 1):
             source = list_ranks[list_ranks.index(rank) + 1]
             XY_source_saved = cart.recv(source = source ) #receive the send from the other proc
             for t in range (Nt): #going through all of the time dimension
@@ -1268,8 +1307,15 @@ if rank == 0:
     print("For ", size, ", the runtime before the mp4 is: ", t1 - t0)
     #plot the end surface aggregate
     surface_aggregate, axis = plt.subplots()
-    axis.set_xlim(0, 30)
-    axis.set_ylim(L_total[1] - 1, L_total[1]) #just want to see the top part
+    if end_plot:
+        Xlim_max = L_X
+        Ylim_min = 0
+    else:
+        Xlim_max = 30
+        Ylim_min = L_Y - 1
+        
+    axis.set_xlim(0, Xlim_max)
+    axis.set_ylim(Ylim_min, L_total[1]) #just want to see the top part
     axis.set_xlabel("x (µm)")
     axis.set_ylabel("y (µm)")
     si = radius_to_s(axis, Radius_molecule) # understandable size of particles - good scale
@@ -1285,6 +1331,7 @@ if rank == 0:
     # --- Figure and initial scatter ---
     fig, ax = plt.subplots(figsize=(12, 8), dpi=200)
     # Set domain to your physical box
+    
     ax.set_xlim(0, L_total[0])
     ax.set_ylim(0, L_total[1])
     ax.set_xlabel("x (µm)")
@@ -1352,7 +1399,10 @@ if rank == 0:
     t2 = time.perf_counter()
     
     print("For ", size, ", the runtime with the mp4 is : ", t2 - t0)
-       
+    
+    import subprocess
+    subprocess.run(["open", "particle_animation.mp4"], check=False)
+      
 MPI.Finalize() # stop the parallelization
 
 
