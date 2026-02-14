@@ -1311,7 +1311,10 @@ if rank == 0:
         Xlim_max = L_X
         Ylim_min = 0
     else:
-        Xlim_max = 30
+        if L_X > 30:
+            Xlim_max = 30
+        else:
+            Xlim_max = L_X
         Ylim_min = L_Y - 1
         
     axis.set_xlim(0, Xlim_max)
