@@ -12,7 +12,7 @@ from matplotlib.animation import FuncAnimation, FFMpegWriter #animation
 from scipy.spatial import cKDTree #spatial tree to do a broad search
 from particle_interactions import update_particles_aggregation, update_particles_collision, broad_detect, narrow_detect, bounced, adhered
 import json, argparse
-
+from pathlib import Path
 
 
 
@@ -44,7 +44,7 @@ ap.add_argument("--config")
 args = ap.parse_args()
 
 #USER INIT
-#time - TO SET
+#Opening the Configuration GUI
 if rank == 0:
     with open(args.config, "r") as f:
         params = json.load(f)
@@ -52,6 +52,15 @@ else:
     params = None
     
 params = cart.bcast(params, root = 0)
+
+#Opening the progress window
+progress_file = Path("progress.txt")
+merge_progress_file = Path("merge_progress.txt")
+
+if rank == 0:
+    progress_file.write_text("0.0\n")
+    merge_progress_file.write_text("0.0\n")
+
 
 T = params["Tsim"] # seconds to change - HERE
 T_add_particles = params["T_add"] #time for which I add particles for - HERE
@@ -363,6 +372,9 @@ for t in range(1, Nt + 1):
     #     Vp_proc[8,:,:] = Vp_proc[8,:,:] - ((Vp_proc[8,:,:] - U_g) * (dt/tau) + np.sqrt(B * dt) * xi)
     if rank == 0 and ((t * dt) % 2 ) == 0 :
         print(t*dt)
+        progress_file.write_text(f"{t*dt}\n")
+        # multi_proc_pb.set(t + 1, f"t = {(t+1)*dt:.2f}s / {T:.2f}s")
+        
       #particles are getting added, add a certain number of particles, I have decided to do a boolean that changes value depending on the rate at which we add particle. The particle are "invisible" or at least wont move position until they are able to
     if t*dt <= T_add_particles:
         Attributes[4, :, Num_Particules : (Num_Particules + Num_Particules_dt), :] = 1
@@ -1237,6 +1249,10 @@ for t in range(1, Nt + 1):
 list_ranks = list(range(size))
 XY_master_saved = XY_local_saved.copy()
 t3 = time.perf_counter()
+if rank == 0:
+    progress_file.write_text(f"{T}\n")
+#     multi_proc_pb.set(T, "Done")
+#     multi_proc_pb.close()
 
 while len(list_ranks) > 1:
     list_ranks_master = list_ranks[0::2] #even index
@@ -1265,8 +1281,16 @@ while len(list_ranks) > 1:
         dest = list_ranks[list_ranks.index(rank) - 1]
         cart.send(XY_master_saved, dest = dest)
     list_ranks = list_ranks_master
+    if rank == 0:
+        if len(list_ranks) > 1 :
+            proc_done = size - len(list_ranks)
+        else:
+            proc_done = size
+        merge_progress_file.write_text(f"{proc_done}\n")
+        
 
 print(rank)
+
 comm.barrier()
  
 if rank == 0:
