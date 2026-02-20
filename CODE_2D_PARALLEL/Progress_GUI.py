@@ -9,6 +9,16 @@ class Progression_Window(tk.Tk):
     def __init__(self, maximum, proc_num):
         super().__init__()
         self.title("Progress Window")
+        self.lift() #put in front                   
+        self.attributes("-topmost", True)  # force on top (temporarily)
+        self.after(200, lambda: self.attributes("-topmost", False))  # release topmost
+        self.focus_force()                 # focus it
+        self.update_idletasks()
+        w, h = 900, 400 # width x height
+        x = (self.winfo_screenwidth() // 2) - (w // 2)
+        y = (self.winfo_screenheight() // 2) - (h // 2)
+        self.geometry(f"{w}x{h}+{x}+{y}")
+                
         # self.protocol("WM_DELETE_WINDOW", lambda: None)# preventing it form being closed
         
         # #configure row columns
@@ -21,7 +31,7 @@ class Progression_Window(tk.Tk):
         
         self.msg = tk.StringVar(value="Starting multi processor calculation") 
         self.msg_2 = tk.StringVar(value="Starting merging processors") 
-        self.msg_3 = tk.StringVar(value="The video compilation is starting once both progress bars are finished,\n takes ± 3 times the time of simulation")
+        self.msg_3 = tk.StringVar(value="The video compilation is starting")
     
         #-----------    
         #Header Label 1 - Simulation Progress
@@ -48,7 +58,11 @@ class Progression_Window(tk.Tk):
         #-----------    
         #Header Label 3 - Video Compilation
         header_3 = ttk.Label(self, textvariable = self.msg_3 , anchor = "center")
-        header_3.grid(row = 4, column = 0, columnspan = 1, rowspan = 2, sticky = "ew", padx= 5, pady= (5, 10))
+        header_3.grid(row = 4, column = 0, columnspan = 1, rowspan = 1, sticky = "ew", padx= 5, pady= (5, 10))
+        
+        #bar 3 - Video expected progress bar
+        self.bar_3 = ttk.Progressbar(self, mode = "determinate", maximum = 100, style = "Thick.Horizontal.TProgressbar")
+        self.bar_3.grid(row = 5, column = 0, rowspan= 1, sticky= "nsew", padx= 5, pady= (0, 12))
         
         
         self.update()
@@ -63,6 +77,12 @@ class Progression_Window(tk.Tk):
         self.bar_2["value"] = value
         if text is not None:
             self.msg_2.set(text)
+        self.update_idletasks()
+        
+    def set_3(self, value, text = None):
+        self.bar_3["value"] = value
+        if text is not None:
+            self.msg_3.set(text)
         self.update_idletasks()
          
     def close(self):

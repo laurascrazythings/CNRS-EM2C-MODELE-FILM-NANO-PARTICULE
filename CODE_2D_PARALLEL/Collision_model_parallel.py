@@ -367,7 +367,7 @@ for t in range(1, Nt + 1):
     #     idx = index_non_zero_gaussian[i]
     #     first_value = min(Aggregate_set[idx])
     #     xi[t - 1, idx, :] = xi[t - 1, first_value, :]
-    Attributes[1,:, index_non_zero_gaussian, :] = Attributes[1, :, index_non_zero_gaussian, :] - (Attributes[1, :, index_non_zero_gaussian, :] - U_g) * (dt/tau) + np.sqrt(B * dt) * xi[t-1, index_non_zero_gaussian, :][:, None, :]
+    Attributes[1, :, index_non_zero_gaussian, :] = Attributes[1, :, index_non_zero_gaussian, :] - (Attributes[1, :, index_non_zero_gaussian, :] - U_g) * (dt/tau) + np.sqrt(B * dt) * xi[t-1, index_non_zero_gaussian, :][:, None, :]
     # #if Vp != 0.0 :  (doesnt work with aggregates bcause the velocities are dependant)
     #     Vp_proc[8,:,:] = Vp_proc[8,:,:] - ((Vp_proc[8,:,:] - U_g) * (dt/tau) + np.sqrt(B * dt) * xi)
     if rank == 0 and ((t * dt) % 2 ) == 0 :
@@ -428,9 +428,11 @@ for t in range(1, Nt + 1):
                     dt_left = dt_left - t_collision
                 else:
                     XY_stack = XY_stack + Vp_stack * dt_left * Added_par_stack
+                    Cg_stack = Cg_stack + Vp_stack * dt_left * Added_par_stack
                     dt_left = 0
             else:
-                XY_stack = XY_stack + Vp_stack * dt_left * Added_par_stack             
+                XY_stack = XY_stack + Vp_stack * dt_left * Added_par_stack 
+                Cg_stack = Cg_stack + Vp_stack * dt_left * Added_par_stack            
                 dt_left = 0 
               
         Attributes[0,:,:,:] = XY_stack.reshape(9, Num_Particules_end, 2)
@@ -1246,6 +1248,7 @@ for t in range(1, Nt + 1):
             
     XY_local_saved[t - 1, :, :] = Attributes[0, 8, :, :].copy() #save the updated values 
     
+print(Attributes[2, 8, :, :])
 list_ranks = list(range(size))
 XY_master_saved = XY_local_saved.copy()
 t3 = time.perf_counter()
@@ -1409,6 +1412,15 @@ if rank == 0:
         scat.set_offsets(positions)
         current_time = frame * dt
         ax.set_title(f"Particle animation (t = {current_time:.3f} s)")
+        
+    video_progress = Path("video_progress.txt").resolve()
+    video_progress.write_text("0\n")
+    
+    def mp4_video_progress(current, total):
+        if total > 0.0:
+            percent = 100* (current/ total)
+            video_progress.write_text(f"{percent:.2f}\n")
+        
 
     # --- Create animation ---  #change to have n particules 
     ani = FuncAnimation( fig, update, frames = frames, interval=1000/fps, blit = False)
@@ -1418,7 +1430,8 @@ if rank == 0:
             "-crf", "17",             # high quality (try 16–18)
             "-pix_fmt", "yuv420p"     # compatibility
         ])
-        ani.save("particle_animation.mp4", writer=writer)
+        ani.save("particle_animation.mp4", writer=writer, progress_callback= mp4_video_progress)
+        video_progress.write_text("1\n")
         
 
     plt.close(fig)#not showing but saving

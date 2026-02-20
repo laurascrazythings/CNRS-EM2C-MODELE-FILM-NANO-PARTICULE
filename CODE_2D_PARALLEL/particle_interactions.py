@@ -101,6 +101,7 @@ def update_particles_collision(XY_stack, Vp_stack, Colliding_pair, t_collision, 
 
     #update the position of the colliding particles
     XY_stack = XY_stack + Vp_stack * t_collision * Added_par_stack #update all of the particles and then later change the one which collided
+    Cg_stack = Cg_stack + Vp_stack * t_collision * Added_par_stack 
     XY_stack[Colliding_pair[0] , :] = XY_stack[Colliding_pair[0] , :].copy() + u_i * t_collision
     XY_stack[Colliding_pair[1] , :] = XY_stack[Colliding_pair[1] , :].copy() + u_j * t_collision
     #Update the velocities of the particles

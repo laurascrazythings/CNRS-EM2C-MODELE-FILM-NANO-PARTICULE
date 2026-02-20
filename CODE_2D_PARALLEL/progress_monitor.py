@@ -16,8 +16,12 @@ def main():
     
     merge_path = Path("merge_progress.txt").resolve()
     merge_path.write_text("0.0")
+    
+    video_path = Path("video_progress.txt").resolve()
+    video_path.write_text("0.0")
 
     def poll():
+         # ---- Bar 1: simulation time progress ----
         try:
             val = float(progress_path.read_text().strip())
             pb.set(val, f"{val:.2f}/{args.max:.2f} s")
@@ -31,11 +35,21 @@ def main():
             m = int(float(merge_path.read_text().strip()))
             pb.set_2(m, f"Merging {m}/{args.proc}")
             if m >= args.proc:
-                pb.set(args.proc, "Merge Proc Done")
+                pb.set_2(args.proc, "Merge Proc Done")
         except Exception:
             pass
+        
+        # ---- Bar 3: video progress ----
+        try:
+            v = float(video_path.read_text().strip())
+            pb.set_3(v, f"Video Progress {v}%")
+            if v >= 100:
+                pb.set_3(100, "Video Compilation Done")
+        except Exception:
+            pass
+        
 
-        pb.after(500, poll)  # <-- IMPORTANT: schedule next poll (Tk-friendly)
+        pb.after(500, poll)
 
     poll()
     pb.mainloop()
