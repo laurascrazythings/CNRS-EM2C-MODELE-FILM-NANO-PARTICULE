@@ -201,7 +201,7 @@ def zone_index(k, Index_par_local_set, Index_par_ghost_right_set, Index_par_ghos
         zone = None
     return zone
 
-def bounced(Index, attributes_local, aggregate_set, Local_wall, wall):
+def bounced(Index, attributes_local, aggregate_set, Local_wall, wall, Radius_molecule):
     """
     Docstring for bounce
     
@@ -209,22 +209,29 @@ def bounced(Index, attributes_local, aggregate_set, Local_wall, wall):
     :param aggregate_set_particle: Description
     """
     #position change
+    difference = 0
     if wall == "up" or wall == "down":
         axis = 1
     elif wall =="right" or wall == "left":
         axis = 0
-    difference = attributes_local[0, Index, axis] - Local_wall
+
+    if wall == "up" or wall == "right":  
+        difference = attributes_local[0, Index, axis] + Radius_molecule - Local_wall
+    elif wall == "down" or wall == "left":
+        difference = (attributes_local[0, Index, axis] - Radius_molecule - Local_wall)
+        
     for k in aggregate_set:
-        #change all the positions
-        attributes_local[0, k, axis] = attributes_local[0, k, axis] - difference  #set the position to the changed position after impact
-        #change the velocities
-        attributes_local[1, k, axis] = - attributes_local[1, k, axis]  #reverse the speed in the x direction
-        #change the center of gravity
-        attributes_local[2, k, axis] = attributes_local[2, k, axis] - difference #reverse the part going too far behind the limit
-    
+        if (attributes_local[1,k,axis] < 0.0 and wall == "down" or wall == "left") or (attributes_local[1,k,axis] > 0.0 and wall == "up" or wall == "right"):
+            #change all the positions
+            attributes_local[0, k, axis] = attributes_local[0, k, axis] - difference  #set the position to the changed position after impact
+            #change the velocities
+            attributes_local[1, k, axis] = - attributes_local[1, k, axis]  #reverse the speed in the x direction
+            #change the center of gravity
+            attributes_local[2, k, axis] = attributes_local[2, k, axis] - difference #reverse the part going too far behind the limit
+        
     return attributes_local
     
-def adhered(Index, attributes_local, aggregate_set, Local_wall, wall):
+def adhered(Index, attributes_local, aggregate_set, Local_wall, wall, Radius_molecule):
     """
     Docstring for adhere
     
@@ -239,11 +246,14 @@ def adhered(Index, attributes_local, aggregate_set, Local_wall, wall):
         axis = 1
     elif wall =="right" or wall == "left":
         axis = 0
-    difference = attributes_local[0, Index, axis] - Local_wall
+    if wall == "up" or "right":  
+        difference = attributes_local[0, Index, axis] + Radius_molecule - Local_wall
+    elif wall == "down" or "left":
+        difference = (attributes_local[0, Index, axis] - Radius_molecule - Local_wall)
     
     for k in aggregate_set:
         #change all the positions
-        attributes_local[0, k, axis] = attributes_local[0, k, axis] - difference  #set the position to the changed position after impact
+        attributes_local[0, k, axis] = attributes_local[0, k, axis] - difference   #set the position to the changed position after impact
         #change the velocities
         attributes_local[1, k, :] = [0, 0]  #reverse the speed in the x direction
         #change the center of gravity

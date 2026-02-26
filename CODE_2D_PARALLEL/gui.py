@@ -239,49 +239,49 @@ class Application(tk.Tk):
         self.text_frame_25 = tk.StringVar(value = "Save the video simulation? : boolean")
         self.default_value_25 = tk.BooleanVar(value = True)
         frame_25 = InputForm_bool(self, key = "Video", text_var = self.text_frame_25, default_value = self.default_value_25) #create a frame
-        frame_25.grid(row = 6, column = 1, sticky="nsew", padx=5, pady = 5)
+        frame_25.grid(row = 8, column = 1, sticky="nsew", padx=5, pady = 5)
         self.forms.append(frame_25)
         
         #frame 26 - End plot size
         self.text_frame_26 = tk.StringVar(value = "Full size end plot? no then zoomed  : boolean")
         self.default_value_26 = tk.BooleanVar(value = False)
         frame_26 = InputForm_bool(self, key = "End_Plot", text_var = self.text_frame_26, default_value = self.default_value_26) #create a frame
-        frame_26.grid(row = 7, column = 1, sticky="nsew", padx=5, pady = 5)
+        frame_26.grid(row = 9, column = 1, sticky="nsew", padx=5, pady = 5)
         self.forms.append(frame_26)
         
         #-----------
         #Header Label 10 - Proc
         header_10 = ttk.Label(self, text = "Number of procs", anchor = "center")
-        header_10.grid(row = 8, column = 1, columnspan = 1, sticky = "ew", padx= 5, pady= (5, 10))
+        header_10.grid(row = 10, column = 1, columnspan = 1, sticky = "ew", padx= 5, pady= (5, 10))
         
         #frame 27 - Number of processors
         self.text_frame_27 = tk.StringVar(value = " Number of processors : integer")
         self.default_value_27 = tk.IntVar(value = 6)
         frame_27 = InputForm_int(self, key = "proc", text_var = self.text_frame_27, default_value = self.default_value_27) #create a frame
-        frame_27.grid(row = 9, column = 1, sticky="nsew", padx=5, pady = 5)
+        frame_27.grid(row = 11, column = 1, sticky="nsew", padx=5, pady = 5)
         self.forms.append(frame_27) 
         
         #------------
         #button add all
         btn_add_all = ttk.Button(self, text = "Add All", command = self.add_all)
-        btn_add_all.grid(row = 10, column = 1, sticky = "e", padx = 10, pady = 10)
+        btn_add_all.grid(row = 12, column = 1, sticky = "e", padx = 10, pady = 10)
         
         #button default all
         btn_default_all = ttk.Button(self, text = "Default All", command= self.def_all)
-        btn_default_all.grid(row = 10, column = 1, sticky = "w", padx = 10, pady = 10)
+        btn_default_all.grid(row = 12, column = 1, sticky = "w", padx = 10, pady = 10)
         
         #button clear all
         btn_clear_all = ttk.Button(self, text = "Clear All", command= self.clear_all)
-        btn_clear_all.grid(row = 10, column = 1, sticky = "", padx = 10, pady = 10)
+        btn_clear_all.grid(row = 12, column = 1, sticky = "", padx = 10, pady = 10)
         
         #-----------
         #Header Label 11 - Check everything
         header_11 = ttk.Label(self, text = "Check everything is full before launching!", anchor = "center", background="#31BE8A")
-        header_11.grid(row = 11, column = 1, columnspan = 1, rowspan = 2, sticky = "ew", padx= 5, pady= (5, 10))
+        header_11.grid(row = 13, column = 1, columnspan = 1, rowspan = 2, sticky = "ew", padx= 5, pady= (5, 10))
         
         #button launch
         btn_launch_sim = ttk.Button(self, text = "Launch Simulation", command = self.launch_sim)
-        btn_launch_sim.grid(row = 13, column = 1,columnspan=1, sticky = "nswe", padx = 10, pady = 10)
+        btn_launch_sim.grid(row = 14, column = 1,columnspan=1, sticky = "nswe", padx = 10, pady = 10)
         
         
         
