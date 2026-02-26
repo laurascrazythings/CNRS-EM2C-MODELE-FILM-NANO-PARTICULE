@@ -66,7 +66,7 @@ def narrow_detect(Particle_test_pair, dt_left, Vp_stack, XY_stack, Radius_molecu
         return None, None
     
 #3 the third function is the update 
-def update_particles_collision(XY_stack, Vp_stack, Colliding_pair, t_collision, Added_par_stack, Radius_molecule, Mass_stack, Num_Particules_end, Aggregate_set, Cg_stack, Attributes, Index_par_local_set, Index_par_ghost_right_set, Index_par_ghost_left_set, Index_par_ghost_up_set, Index_par_ghost_down_set, 
+def update_particles_collision(XY_stack, Vp_stack, Spin_stack, Colliding_pair, t_collision, Added_par_stack, Radius_molecule, Mass_stack, Num_Particules_end, Aggregate_set, Cg_stack, Attributes, Index_par_local_set, Index_par_ghost_right_set, Index_par_ghost_left_set, Index_par_ghost_up_set, Index_par_ghost_down_set, 
                Index_par_ghost_up_right_set, Index_par_ghost_down_right_set, Index_par_ghost_down_left_set, Index_par_ghost_up_left_set):
     """
     update the particle velocity and its position at contact - collision case
@@ -120,9 +120,9 @@ def update_particles_collision(XY_stack, Vp_stack, Colliding_pair, t_collision, 
             if zone != None and Attributes[5, zone, k, 0] == 0: 
                 Vp_stack[zone * Num_Particules_end + k, :] = (cr * mass_i * (u_i - u_j) + mass_i * u_i + mass_j * u_j)/ (mass_i + mass_j)
                 
-    return XY_stack, Vp_stack, Cg_stack, Aggregate_set,
+    return XY_stack, Vp_stack, Cg_stack, Aggregate_set, Spin_stack
 
-def update_particles_aggregation(XY_stack, Vp_stack, Colliding_pair, t_collision, Added_par_stack, Radius_molecule, Mass_stack, Num_Particules_end, Aggregate_set, Cg_stack, Attributes, Index_par_local_set, Index_par_ghost_right_set, Index_par_ghost_left_set, Index_par_ghost_up_set, Index_par_ghost_down_set, 
+def update_particles_aggregation(XY_stack, Vp_stack, Spin_stack, Colliding_pair, t_collision, Added_par_stack, Radius_molecule, Mass_stack, Num_Particules_end, Aggregate_set, Cg_stack, Attributes, Index_par_local_set, Index_par_ghost_right_set, Index_par_ghost_left_set, Index_par_ghost_up_set, Index_par_ghost_down_set, 
                Index_par_ghost_up_right_set, Index_par_ghost_down_right_set, Index_par_ghost_down_left_set, Index_par_ghost_up_left_set):
     """
     update the particle and its characteristics if the particles are agglomerating
@@ -131,18 +131,19 @@ def update_particles_aggregation(XY_stack, Vp_stack, Colliding_pair, t_collision
     Returns:
 
     """
+    # The need for relative index comes from the fact that to have smooth collisions, I have stacked all the values of the particles into one array; to ensure I am pulling the right radius values i have to divide the index of the stack by the length of  normal array
     relative_index = np.zeros(2, dtype = int)
     relative_index[0] = Colliding_pair[0] % (Num_Particules_end )
     relative_index[1] = Colliding_pair[1] % (Num_Particules_end )
     i, j = relative_index
+    
     Cgi = Cg_stack[Colliding_pair[0], :] #center of gravity of the first aggregate
     Cgj = Cg_stack[Colliding_pair[1], :] #center of gravity of the second aggregate
         
     mass_i = Mass_stack[Colliding_pair[0]]
     mass_j = Mass_stack[Colliding_pair[1]]
     
-    # The need for relative index comes from the fact that to have smooth collisions, I have stacked all the values of the particles into one array; to ensure I am pulling the right radius values i have to divide the index of the stack by the length of  normal array
-    cr = ((((2 * Radius_molecule) *10**(-6))/0.15) * (-0.88)) + 0.78
+    cr = ((((2 * Radius_molecule) *10**(-6))/0.15) * (-0.88)) + 0.78 #coefficient of restitution
     u_i = Vp_stack[Colliding_pair[0], :].copy()
     u_j = Vp_stack[Colliding_pair[1], :].copy()
     
@@ -160,6 +161,9 @@ def update_particles_aggregation(XY_stack, Vp_stack, Colliding_pair, t_collision
     cg_update = (Cgi * mass_i + Cgj * mass_j) / (mass_i + mass_j)
     V_new = (u_i * mass_i + u_j * mass_j) / (mass_i + mass_j)
     
+    #spin
+    #distance from center of gravity of 
+    
     for k in merge:
         Aggregate_set[k] = merge.copy()
         zone = zone_index(k, Index_par_local_set, Index_par_ghost_right_set, Index_par_ghost_left_set, Index_par_ghost_up_set, Index_par_ghost_down_set, 
@@ -170,7 +174,7 @@ def update_particles_aggregation(XY_stack, Vp_stack, Colliding_pair, t_collision
                 Vp_stack[zone * Num_Particules_end + k, :] = V_new.copy() # average the velocity after impact? missing the e?
             Mass_stack[zone * Num_Particules_end + k, :] = Mass_new.copy()
    
-    return XY_stack, Vp_stack, Cg_stack, Aggregate_set
+    return XY_stack, Vp_stack, Cg_stack, Aggregate_set, Spin_stack
 
 def zone_index(k, Index_par_local_set, Index_par_ghost_right_set, Index_par_ghost_left_set, Index_par_ghost_up_set, Index_par_ghost_down_set, 
                Index_par_ghost_up_right_set, Index_par_ghost_down_right_set, Index_par_ghost_down_left_set, Index_par_ghost_up_left_set):
@@ -221,7 +225,7 @@ def bounced(Index, attributes_local, aggregate_set, Local_wall, wall, Radius_mol
         difference = (attributes_local[0, Index, axis] - Radius_molecule - Local_wall)
         
     for k in aggregate_set:
-        if (attributes_local[1,k,axis] < 0.0 and wall == "down" or wall == "left") or (attributes_local[1,k,axis] > 0.0 and wall == "up" or wall == "right"):
+        if (attributes_local[1,k,axis] < 0.0 and wall == "down" or wall == "left") or (attributes_local[1,k,axis] > 0.0 and wall == "up" or wall == "right"): #ensures that particules can come in if we want to add them
             #change all the positions
             attributes_local[0, k, axis] = attributes_local[0, k, axis] - difference  #set the position to the changed position after impact
             #change the velocities

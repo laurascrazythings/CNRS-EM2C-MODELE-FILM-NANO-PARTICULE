@@ -223,7 +223,7 @@ Local_down= (coordinates_y )/Py * Ly #the prinicpal zone ends on the bottom
 Local_ghost_down = Local_down - Buffer_zone_width[1] #the ghost zone ends
 
 # Particule attributes - set to zeros the attributes
-Attributes = np.zeros((6, 9, Num_Particules_end, 2)) #creating the different attributes
+Attributes = np.zeros((7, 9, Num_Particules_end, 2)) #creating the different attributes
 # Attributes[0, :,:, :] : position; 1: velocity; 2: Cg_proc; 3: Mass; 4: Display on or off; 5: Attached to the wall 
 
 ##[:,0] : right; [:,1]: left; [:,2]: up; [:,3]: down [:,4] : up right; [:,5]: down right; [:,6]: down left; [:,7]: up left; [:. 8]: local
@@ -264,6 +264,7 @@ for p in range(Num_Particules_end):
         Attributes[3, 8, p, :] = [Mass_one_particle, Mass_one_particle] #mass, the 0 is to not get errors
         Attributes[4, 8, p, :] = [Added_par[p], Added_par[p]] # display particules, 0 to not get errors
         Attributes[5, 8, p, :] = [0, 0] #attached to a wall, the first 0 is for false and the second to fill the space to not get errors
+        Attributes[6, 8, p, :] = [0, 0] #spin equals to 0 at the start
     elif Local_ghost_left <= Position_x < Local_left and Local_down <= Position_y < Local_up: #particule in the left ghost
         Index_par_ghost_left.append(p)
         Index_par_ghost_left_set.add(p)
@@ -273,6 +274,7 @@ for p in range(Num_Particules_end):
         Attributes[3, 1, p, :] = [Mass_one_particle, Mass_one_particle] #mass
         Attributes[4, 1, p, :] = [Added_par[p], Added_par[p]] # display particules, 0 to not get errors
         Attributes[5, 1, p, :] = [0, 0] #attached to a wall 
+        Attributes[6, 1, p, :] = [0, 0] #spin equals to 0 at the start
     elif Local_right <= Position_x <= Local_ghost_right and Local_down <= Position_y < Local_up: #particule in the right ghost
         Index_par_ghost_right.append(p)
         Index_par_ghost_right_set.add(p)
@@ -282,6 +284,7 @@ for p in range(Num_Particules_end):
         Attributes[3, 0, p, :] = [Mass_one_particle, Mass_one_particle] #mass
         Attributes[4, 0, p, :] = [Added_par[p], Added_par[p]] # display particules, 0 to not get errors
         Attributes[5, 0, p, :] = [0, 0] #attached to a wall 
+        Attributes[6, 0, p, :] = [0, 0] #spin equals to 0 at the start
     elif Local_left <= Position_x < Local_right and Local_up <= Position_y <= Local_ghost_up: #up ghost 
         Index_par_ghost_up.append(p)
         Index_par_ghost_up_set.add(p)
@@ -290,7 +293,8 @@ for p in range(Num_Particules_end):
         Attributes[2, 2, p, :] = XY_start[p, :] #Center of gravity is equal to the position unless in an aggregate
         Attributes[3, 2, p, :] = [Mass_one_particle, Mass_one_particle] #mass
         Attributes[4, 2, p, :] = [Added_par[p], Added_par[p]] # display particules, 0 to not get errors
-        Attributes[5, 2, p, :] = [0, 0] #attached to a wall  
+        Attributes[5, 2, p, :] = [0, 0] #attached to a wall
+        Attributes[6, 2, p, :] = [0, 0] #spin equals to 0 at the start  
     elif Local_left <= Position_x < Local_right and Local_ghost_down <= Position_y < Local_down: #down ghost 
         Index_par_ghost_down.append(p)
         Index_par_ghost_down_set.add(p)
@@ -362,9 +366,6 @@ for t in range(1, Nt + 1):
             for k in Aggregate_set[i]:
                 xi[t-1, k, :] = Avg_Brownian.copy()
                 brownian_changed[k] = True
-                print(k, xi[t-1, :, :] )
-            
-            #print(i, Aggregate_set[i], xi[t-1, :, :])
             
     
     # #update the velocities to match a brownian motion, we chose to go with the ornstein uhlenbeck implementation on speed
@@ -403,6 +404,7 @@ for t in range(1, Nt + 1):
         Cg_stack = Attributes[2,:,:,:].reshape(-1, 2)
         Mass_stack = Attributes[3,:,:,:].reshape(-1, 2)
         Added_par_stack = Attributes[4, :, :, :].reshape(-1, 2)
+        
         
         
         while dt_left > 0 :
@@ -1103,7 +1105,8 @@ for t in range(1, Nt + 1):
     for Index, attributes, aggregate in incoming_from_left: #for all the different particles
         #add to ghost left
         if coordinates_x == 0:
-            attributes[0, 0] = attributes[0, 0] - L_total[0] #if it comes from the last proc, the position is equal to 
+            attributes[0, 0] = attributes[0, 0] - L_total[0] #if it comes from the last proc, the position is equal to
+            attributes[2, 0] = attributes[2, 0] - L_total[0] #change the center of gravity as well
         if Index not in Index_par_ghost_left_set:
             Index_par_ghost_left.append(Index) #add the particle index
             Index_par_ghost_left_set.add(Index)
@@ -1122,6 +1125,7 @@ for t in range(1, Nt + 1):
         #add to ghost b
         if coordinates_x == (dimensions_proc[0] - 1) :
             attributes[0, 0] = attributes[0, 0] + L_total[0] #if it comes from the first proc, te position is equal to 
+            attributes[2, 0] = attributes[2, 0] + L_total[0]
         if Index not in Index_par_ghost_right_set:
             Index_par_ghost_right.append(Index)
             Index_par_ghost_right_set.add(Index)
@@ -1139,6 +1143,7 @@ for t in range(1, Nt + 1):
     for Index, attributes, aggregate in incoming_from_up:
         if coordinates_y == (dimensions_proc[1] - 1):
             attributes[0, 1] = attributes[0, 1] + L_total[1] #if it comes from the first proc, te position is equal to 
+            attributes[2, 1] = attributes[2, 1] + L_total[1]
         if Index not in Index_par_ghost_up_set:
             Index_par_ghost_up.append(Index)
             Index_par_ghost_up_set.add(Index)
@@ -1156,6 +1161,7 @@ for t in range(1, Nt + 1):
     for Index, attributes, aggregate in incoming_from_down:
         if coordinates_y == 0:
             attributes[0, 1] = attributes[0, 1] - L_total[1] #if it comes from the first proc, te position is equal to 
+            attributes[2, 1] = attributes[2, 1] - L_total[1]
         if Index not in Index_par_ghost_down_set:
             Index_par_ghost_down.append(Index)
             Index_par_ghost_down_set.add(Index)
@@ -1173,8 +1179,10 @@ for t in range(1, Nt + 1):
     for Index, attributes, aggregate in incoming_from_up_right:
         if coordinates_x == (dimensions_proc[0] - 1):
             attributes[0, 0] = attributes[0, 0] + L_total[0] #if it comes from the first proc, te position is equal to 
+            attributes[2, 0] = attributes[2, 0] + L_total[0] 
         if coordinates_y == (dimensions_proc[1] - 1):
             attributes[0, 1] = attributes[0, 1] + L_total[1] #if it comes from the first proc, te position is equal to 
+            attributes[2, 1] = attributes[2, 1] + L_total[1]
         if Index not in Index_par_ghost_up_right_set:
             Index_par_ghost_up_right.append(Index)
             Index_par_ghost_up_right_set.add(Index)
@@ -1192,8 +1200,10 @@ for t in range(1, Nt + 1):
     for Index, attributes, aggregate in incoming_from_down_right:
         if coordinates_x == (dimensions_proc[0] - 1) :
             attributes[0, 0] = attributes[0, 0] + L_total[0] #if it comes from the first proc, te position is equal to 
+            attributes[2, 0] = attributes[2, 0] + L_total[0]
         if coordinates_y == 0:
             attributes[0, 1] = attributes[0, 1] - L_total[1] #if it comes from the first proc, te position is equal to 
+            attributes[2, 1] = attributes[2, 1] - L_total[1]
         if Index not in Index_par_ghost_down_right_set:
             Index_par_ghost_down_right.append(Index)
             Index_par_ghost_down_right_set.add(Index)
@@ -1211,8 +1221,10 @@ for t in range(1, Nt + 1):
     for Index, attributes, aggregate in incoming_from_down_left:
         if coordinates_x == 0 :
             attributes[0, 0] = attributes[0, 0] - L_total[0] #if it comes from the first proc, te position is equal to 
+            attributes[2, 0] = attributes[2, 0] - L_total[0]
         if coordinates_y == 0:
             attributes[0, 1] = attributes[0, 1] - L_total[1] #if it comes from the first proc, te position is equal to 
+            attributes[2, 1] = attributes[2, 1] - L_total[1]
         if Index not in Index_par_ghost_down_left_set:
             Index_par_ghost_down_left.append(Index)
             Index_par_ghost_down_left_set.add(Index)
@@ -1230,8 +1242,10 @@ for t in range(1, Nt + 1):
     for Index, attributes, aggregate in incoming_from_up_left:
         if coordinates_x == 0:
             attributes[0, 0] = attributes[0, 0] - L_total[0] #if it comes from the first proc, te position is equal to 
+            attributes[2, 0] = attributes[2, 0] - L_total[0]
         if coordinates_y == (dimensions_proc[1] - 1):
             attributes[0, 1] = attributes[0, 1] + L_total[1] #if it comes from the first proc, te position is equal to 
+            attributes[2, 1] = attributes[2, 1] + L_total[1]
         if Index not in Index_par_ghost_up_left_set:
             Index_par_ghost_up_left.append(Index)
             Index_par_ghost_up_left_set.add(Index)
@@ -1242,7 +1256,8 @@ for t in range(1, Nt + 1):
             Aggregate_set[Index] = aggregate
             
     XY_local_saved[t - 1, :, :] = Attributes[0, 8, :, :].copy() #save the updated values 
-    
+print("cog", Attributes[2,8,:,:])
+
 list_ranks = list(range(size))
 XY_master_saved = XY_local_saved.copy()
 t3 = time.perf_counter()
