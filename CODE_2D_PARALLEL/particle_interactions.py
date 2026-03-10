@@ -5,13 +5,20 @@ from scipy.spatial import cKDTree #spatial tree to do a broad search
 #1 the first function is the broad phase
 def broad_detect(XY, d):
 
-    """ Detect potential collision to prevent from testing every single pair using a KD-Tree for now
+    """ Goal : Detect potential collision to prevent from testing every single pair using a KD-Tree for now
+        How: Returning the pairs of particles that are within a distance d of each other, meaning that they could potentially 
+        collide in the next dt, and then we will test those pairs in the narrow phase to see if they actually collide or not. 
+        I am using a KD-Tree for this, which is a data structure that allows for efficient spatial queries. I am also masking 
+        the particles that are at position 0,0 to prevent them from being detected as colliding with each other. This is because 
+        I am using the position 0,0 to represent particles that are not yet "sent" into the simulation, and I don't want them to 
+        be detected as colliding with each other. I am also returning the indices of the particles in the original array, so that 
+        I can easily update their positions and velocities later on.
     Args:
         XY (array): Array of particle XY positions.
         d (float): superior to the Highest distance in one dt 
 
     Returns:
-        array: Pairs of indices representing potential colliding particles. """   
+        Array: Pairs of indices representing potential colliding particles. """   
     mask = ~np.all(XY == 0.0, axis=1)   #mask the 0.0 positioned particles
     idx_valid = np.flatnonzero(mask) #keeps the indexes
     XY_non_zero = XY[mask] #position of the real particles
@@ -22,13 +29,22 @@ def broad_detect(XY, d):
 #2 the second function is the narrow phase
 def narrow_detect(Particle_test_pair, dt_left, Vp_stack, XY_stack, Radius_molecule, Num_Particules_end):
     """
-    Test the interaction of pairs of particles 
+    Goal: Test the interaction of pairs of particles that are close to each other to see if they actually 
+    collide or not, and if they do, return the time of collision. I am using the equations of motion to 
+    calculate the time of collision, and I am also taking into account the radius of the particles to 
+    determine if they collide or not. I am also using the relative velocity and position of the particles 
+    to calculate the time of collision, and I am also checking if the particles are moving towards each other 
+    or not to determine if they will collide or not. If they are moving away from each other, then they will 
+    not collide, even if they are close to each other. If they are moving towards each other, then I will 
+    calculate the time of collision and return it, along with the pair of particles that collide. 
     
     Args:
         Particle_test_pair : array of the pair of particles collding 
         dt_left : float : dt left to the next dt
         Vp_stack : array of size 9* Number of particles and 2 dimensions: velocity of the particle
         XY_proc : array of size 9* Number of particles and 2 dimensions: position of the particle
+        Radius_molecule : float : radius of the particles
+        Num_Particules_end : int : number of particles in the simulation
     Returns:
         array: Pairs of colliding particle if they collide
         float: time of collision
@@ -69,21 +85,32 @@ def narrow_detect(Particle_test_pair, dt_left, Vp_stack, XY_stack, Radius_molecu
 def update_particles_collision(XY_stack, Vp_stack, Spin_stack, Colliding_pair, t_collision, Added_par_stack, Radius_molecule, Mass_stack, Num_Particules_end, Aggregate_set, Cg_stack, Attributes, Index_par_local_set, Index_par_ghost_right_set, Index_par_ghost_left_set, Index_par_ghost_up_set, Index_par_ghost_down_set, 
                Index_par_ghost_up_right_set, Index_par_ghost_down_right_set, Index_par_ghost_down_left_set, Index_par_ghost_up_left_set):
     """
-    update the particle velocity and its position at contact - collision case
+    Goal:update the particle velocity and its position at contact - collision case 
     Args:
+        XY_stack: array of size 9*Number of particles and 2 dimensions: position of the particle
+        Vp_stack: array of size 9*Number of particles and 2 dimensions: velocity of the particle
+        Spin_stack: array of size 9*Number of particles and 2 dimensions: spin of the particle
         Colliding_pair: Array of 2 particles, of 2 dimensions
         t_collision: float: time of collision
-        XY_proc: array of size 9* Number of particles and 2 dimensions: position of the particle
-        Vp_proc: array of size 9* Number of particles and 2 dimensions: velocity of the particle
-        Added_par: array of size Number of particles and 1 dimensions: now if the particle is "sent" yet.
-        Radius_molecule:
-        Mass_molecule:
+        Added_par_stack: array of size Number of particles and 1 dimensions: to know if the particle is visible
+        Radius_molecule: float: radius of the particles
+        Colliding_pair: Array of 2 particles, of 2 dimensions
+        t_collision: float: time of collision
+        Mass_stack: array of size 9* Number of particles and 2 dimensions: mass of the particle
+        Num_Particules_end: int: number of particles in the simulation
+        Aggregate_set: list of the particles in the same aggregate
+        Cg_stack: array of size 9* Number of particles and 2 dimensions: center of gravity of the particle
+        Attributes: array of size,number of attributes, size 9, Number of particles, 2 dimensions : where all the 
+        data of 1 particle is stored
+        All the Index_par_..._set: sets of the indices of the particles in the local and ghost zones, to know which ones to update
+
         
     Returns:
         XY_stack: array of size 9*Number of particles and 2 dimensions: position of the particle updated
-        Vp_stack: array of size 9* Number of particles and 2 dimensions: velocity of the particle
-        Aggregate_set
-        Cg_proc
+        Vp_stack: array of size 9* Number of particles and 2 dimensions: velocity of the particle updated
+        Cg_stack: array of size 9* Number of particles and 2 dimensions: center of gravity of the particle updated
+        Aggregate_set : list of the particles in the same aggregate updated
+        Spin_stack: array of size 9* Number of particles and 2 dimensions: spin of the particle updated
     """
     relative_index = np.zeros(2, dtype = int)
     relative_index[0] = Colliding_pair[0] % (Num_Particules_end)
@@ -125,11 +152,32 @@ def update_particles_collision(XY_stack, Vp_stack, Spin_stack, Colliding_pair, t
 def update_particles_aggregation(XY_stack, Vp_stack, Spin_stack, Colliding_pair, t_collision, Added_par_stack, Radius_molecule, Mass_stack, Num_Particules_end, Aggregate_set, Cg_stack, Attributes, Index_par_local_set, Index_par_ghost_right_set, Index_par_ghost_left_set, Index_par_ghost_up_set, Index_par_ghost_down_set, 
                Index_par_ghost_up_right_set, Index_par_ghost_down_right_set, Index_par_ghost_down_left_set, Index_par_ghost_up_left_set):
     """
-    update the particle and its characteristics if the particles are agglomerating
+    Goal:update the particle velocity and its position at contact - aggregation case 
     Args:
-    
-    Returns:
+        XY_stack: array of size 9*Number of particles and 2 dimensions: position of the particle
+        Vp_stack: array of size 9*Number of particles and 2 dimensions: velocity of the particle
+        Spin_stack: array of size 9*Number of particles and 2 dimensions: spin of the particle
+        Colliding_pair: Array of 2 particles, of 2 dimensions
+        t_collision: float: time of collision
+        Added_par_stack: array of size Number of particles and 1 dimensions: to know if the particle is visible
+        Radius_molecule: float: radius of the particles
+        Colliding_pair: Array of 2 particles, of 2 dimensions
+        t_collision: float: time of collision
+        Mass_stack: array of size 9* Number of particles and 2 dimensions: mass of the particle
+        Num_Particules_end: int: number of particles in the simulation
+        Aggregate_set: list of the particles in the same aggregate
+        Cg_stack: array of size 9* Number of particles and 2 dimensions: center of gravity of the particle
+        Attributes: array of size,number of attributes, size 9, Number of particles, 2 dimensions : where all the 
+        data of 1 particle is stored
+        All the Index_par_..._set: sets of the indices of the particles in the local and ghost zones, to know which ones to update
 
+        
+    Returns:
+        XY_stack: array of size 9*Number of particles and 2 dimensions: position of the particle updated
+        Vp_stack: array of size 9* Number of particles and 2 dimensions: velocity of the particle updated
+        Cg_stack: array of size 9* Number of particles and 2 dimensions: center of gravity of the particle updated
+        Aggregate_set : list of the particles in the same aggregate updated
+        Spin_stack: array of size 9* Number of particles and 2 dimensions: spin of the particle updated
     """
     # The need for relative index comes from the fact that to have smooth collisions, I have stacked all the values of the particles into one array; to ensure I am pulling the right radius values i have to divide the index of the stack by the length of  normal array
     relative_index = np.zeros(2, dtype = int)
@@ -181,7 +229,11 @@ def zone_index(k, Index_par_local_set, Index_par_ghost_right_set, Index_par_ghos
     """
     from index of particle aggregating returns the zone the particle is in to allow for updating the velocity of the aggregate
     
-    :param k: Description
+    Args:
+    k: int : index of the particle in the local array
+    Index_par_..._set: sets of the indices of the particles in the local and ghost zones, to know which ones to update
+    Returns:
+    int: zone of the particle, from 0 to 8
     """
     if k in Index_par_local_set:
         zone = 8
@@ -207,10 +259,16 @@ def zone_index(k, Index_par_local_set, Index_par_ghost_right_set, Index_par_ghos
 
 def bounced(Index, attributes_local, aggregate_set, Local_wall, wall, Radius_molecule):
     """
-    Docstring for bounce
-    
-    :param attributes_particle: Description
-    :param aggregate_set_particle: Description
+    Goal: update the particle velocity and its position at contact when the particle is touching a wall
+    Args:
+    Index: int : index of the particle in the local array
+    attributes_local: array of size,number of attributes, Number of particles, 2
+    Local_wall
+    Wall: string : "up", "down", "right" or "left"
+    Radius_molecule: float : radius of the particles
+    Returns:
+    attributes_local: array of size,number of attributes, Number of particles, 2 :
+
     """
     #position change
     difference = 0
@@ -237,13 +295,16 @@ def bounced(Index, attributes_local, aggregate_set, Local_wall, wall, Radius_mol
     
 def adhered(Index, attributes_local, aggregate_set, Local_wall, wall, Radius_molecule):
     """
-    Docstring for adhere
-    
-    :param Index: Description
-    :param attributes_local: Description
-    :param aggregate_set: Description
-    :param local_wall: Description
-    :param wall: Description
+    Goal: update the particle velocity and its position at contact when the particle is touching an adhering wall
+    Args:
+    Index: int : index of the particle in the local array
+    attributes_local: array of size,number of attributes, Number of particles, 2
+    Local_wall
+    Wall: string : "up", "down", "right" or "left"
+    Radius_molecule: float : radius of the particles
+    Returns:
+    attributes_local: array of size,number of attributes, Number of particles, 2 :
+
     """
     #position change
     if wall == "up" or wall == "down":

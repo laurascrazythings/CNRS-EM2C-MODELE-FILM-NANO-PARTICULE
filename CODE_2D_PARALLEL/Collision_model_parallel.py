@@ -1,10 +1,11 @@
-#By Laura Lambert Bocquet - lauralambertbocquet@gmail.com for CNRS, January 2026, Aymeric Vie
+#By Laura Lambert Bocquet - lauralambertbocquet@gmail.com for CNRS, January 2026
 #The goal of this code is to have a cheap 3d numerical simulation of molecularar interactions at the micrometer level 
 #For this it uses MPI or Message Per which allows the separation of the different cores of the cpu;
 #It also uses non trivial coding sequences to allow for better O timings and tends to run as much as possible on O(log n ) or O(n log n)
 
 #I am wanting to code a mpi code that can send one particule from one proc to another - 2D
 from mpi4py import MPI #mpi
+import h5py
 import numpy as np #np calculation
 import matplotlib.pyplot as plt #plotting
 import time
@@ -303,7 +304,8 @@ for p in range(Num_Particules_end):
         Attributes[2, 3, p, :] = XY_start[p, :] #Center of gravity is equal to the position unless in an aggregate
         Attributes[3, 3, p, :] = [Mass_one_particle, Mass_one_particle] #mass
         Attributes[4, 3, p, :] = [Added_par[p], Added_par[p]] # display particules, 0 to not get errors
-        Attributes[5, 3, p, :] = [0, 0] #attached to a wall 
+        Attributes[5, 3, p, :] = [0, 0] #attached to a wall
+        Attributes[6, 3, p, :] = [0, 0] #spin equals to 0 at the start 
     elif Local_right <= Position_x <= Local_ghost_right and Local_up <= Position_y <= Local_ghost_up : #corners up right ghost
         Index_par_ghost_up_right.append(p)
         Index_par_ghost_up_right_set.add(p)
@@ -313,6 +315,7 @@ for p in range(Num_Particules_end):
         Attributes[3, 4, p, :] = [Mass_one_particle, Mass_one_particle] #mass
         Attributes[4, 4, p, :] = [Added_par[p], Added_par[p]] # display particules, 0 to not get errors
         Attributes[5, 4, p, :] = [0, 0] #attached to a wall  
+        Attributes[6, 4, p, :] = [0, 0] #spin equals to 0 at the start 
     elif Local_right <= Position_x <= Local_ghost_right and Local_ghost_down <= Position_y < Local_down : #corners down right ghost
         Index_par_ghost_down_right.append(p)
         Index_par_ghost_down_right_set.add(p)
@@ -322,6 +325,7 @@ for p in range(Num_Particules_end):
         Attributes[3, 5, p, :] = [Mass_one_particle, Mass_one_particle] #mass
         Attributes[4, 5, p, :] = [Added_par[p], Added_par[p]] # display particules, 0 to not get errors
         Attributes[5, 5, p, :] = [0, 0] #attached to a wall 
+        Attributes[6, 5, p, :] = [0, 0] #spin equals to 0 at the start 
     elif Local_ghost_left <= Position_x < Local_left and Local_ghost_down <= Position_y < Local_down : #corners down left ghost
         Index_par_ghost_down_left.append(p)
         Index_par_ghost_down_left_set.add(p)
@@ -330,7 +334,8 @@ for p in range(Num_Particules_end):
         Attributes[2, 6, p, :] = XY_start[p, :] #Center of gravity is equal to the position unless in an aggregate
         Attributes[3, 6, p, :] = [Mass_one_particle, Mass_one_particle] #mass
         Attributes[4, 6, p, :] = [Added_par[p], Added_par[p]] # display particules, 0 to not get errors
-        Attributes[5, 6, p, :] = [0, 0] #attached to a wall  
+        Attributes[5, 6, p, :] = [0, 0] #attached to a wall
+        Attributes[6, 6, p, :] = [0, 0] #spin equals to 0 at the start   
     elif Local_ghost_left <= Position_x < Local_left and Local_up <= Position_y <= Local_ghost_up : #corners up left ghost
         Index_par_ghost_up_left.append(p)
         Index_par_ghost_up_left_set.add(p)
@@ -339,7 +344,8 @@ for p in range(Num_Particules_end):
         Attributes[2, 7, p, :] = XY_start[p, :] #Center of gravity is equal to the position unless in an aggregate
         Attributes[3, 7, p, :] = [Mass_one_particle, Mass_one_particle] #mass
         Attributes[4, 7, p, :] = [Added_par[p], Added_par[p]] # display particules, 0 to not get errors
-        Attributes[5, 7, p, :] = [0, 0] #attached to a wall  
+        Attributes[5, 7, p, :] = [0, 0] #attached to a wall
+        Attributes[6, 7, p, :] = [0, 0] #spin equals to 0 at the start   
     #because of the periodical condition, the ghosts of the borders is actually on the other side, it can cause some distubances in the t =0 because the particle dont fall into any categories    
          
 
@@ -375,16 +381,17 @@ for t in range(1, Nt + 1):
     A[non_zero_gaussian, :] = Vel_brownian_update[non_zero_gaussian, :]
 
      
-    if rank == 0 and ((t * dt) % 2 ) == 0 :
+    if rank == 0 and ((t * dt) % 2 ) == 0 : #print the progress
         print(t*dt)
         progress_file.write_text(f"{t*dt}\n")
         # multi_proc_pb.set(t + 1, f"t = {(t+1)*dt:.2f}s / {T:.2f}s")
         
       #particles are getting added, add a certain number of particles, I have decided to do a boolean that changes value depending on the rate at which we add particle. The particle are "invisible" or at least wont move position until they are able to
-    if t*dt <= T_add_particles:
+    
+    if t*dt <= T_add_particles: #update the transparent particules
         Attributes[4, :, Num_Particules : (Num_Particules + Num_Particules_dt), :] = 1
         Num_Particules = Num_Particules + Num_Particules_dt       
-        #update the transparent particules
+        
     
         
     Particle_info_right = [] #list of particles to send to the right 
@@ -404,7 +411,7 @@ for t in range(1, Nt + 1):
         Cg_stack = Attributes[2,:,:,:].reshape(-1, 2)
         Mass_stack = Attributes[3,:,:,:].reshape(-1, 2)
         Added_par_stack = Attributes[4, :, :, :].reshape(-1, 2)
-        
+        Spin_stack = Attributes[6, :, :, :].reshape(-1, 2)
         
         
         while dt_left > 0 :
@@ -424,11 +431,11 @@ for t in range(1, Nt + 1):
                     t_collision = t_collisions[idx] #time fo first collision
                     link = np.random.rand(1) 
                     if np.sqrt((np.abs(Vp_stack[First_collision[0],0] - Vp_stack[First_collision[1],0]))**(2) + (np.abs(Vp_stack[First_collision[0],1] - Vp_stack[First_collision[1],1]))**(2)) > 1.5 :
-                        XY_stack, Vp_stack, Cg_stack, Aggregate_set = update_particles_collision(XY_stack, Vp_stack, First_collision, t_collision, Added_par_stack, Radius_molecule, Mass_stack, Num_Particules_end, Aggregate_set, Cg_stack, Attributes,
+                        XY_stack, Vp_stack, Cg_stack, Aggregate_set, Spin_stack = update_particles_collision(XY_stack, Vp_stack, Spin_stack, First_collision, t_collision, Added_par_stack, Radius_molecule, Mass_stack, Num_Particules_end, Aggregate_set, Cg_stack, Attributes,
                                                                                                  Index_par_local_set, Index_par_ghost_right_set, Index_par_ghost_left_set, Index_par_ghost_up_set, Index_par_ghost_down_set, 
                                                                                                  Index_par_ghost_up_right_set, Index_par_ghost_down_right_set, Index_par_ghost_down_left_set, Index_par_ghost_up_left_set)
                     else:
-                        XY_stack, Vp_stack, Cg_stack, Aggregate_set = update_particles_aggregation(XY_stack, Vp_stack, First_collision, t_collision, Added_par_stack, Radius_molecule, Mass_stack, Num_Particules_end, Aggregate_set, Cg_stack, Attributes,
+                        XY_stack, Vp_stack, Cg_stack, Aggregate_set, Spin_stack = update_particles_aggregation(XY_stack, Vp_stack, Spin_stack, First_collision, t_collision, Added_par_stack, Radius_molecule, Mass_stack, Num_Particules_end, Aggregate_set, Cg_stack, Attributes,
                                                                                                    Index_par_local_set, Index_par_ghost_right_set, Index_par_ghost_left_set, Index_par_ghost_up_set, Index_par_ghost_down_set, 
                                                                                                    Index_par_ghost_up_right_set, Index_par_ghost_down_right_set, Index_par_ghost_down_left_set, Index_par_ghost_up_left_set)
                     dt_left = dt_left - t_collision
@@ -445,6 +452,7 @@ for t in range(1, Nt + 1):
         Attributes[1,:,:,:] = Vp_stack.reshape(9, Num_Particules_end, 2)
         Attributes[2,:,:,:] = Cg_stack.reshape(9, Num_Particules_end, 2)
         Attributes[3,:,:,:] = Mass_stack.reshape(9, Num_Particules_end, 2)
+        Attributes[6,:,:,:] = Spin_stack.reshape(9, Num_Particules_end, 2)
         #now we have dealt with the transition from local to the ghosts, 
         # we have to deal with inter ghost and leaving interactions, for each ghost, there are 4 interactions possible.
         #right ghost interactions            
@@ -1301,10 +1309,22 @@ while len(list_ranks) > 1:
         merge_progress_file.write_text(f"{proc_done}\n")
         
 
-print(rank)
+print(rank) # for me to know whch pric is done, can be removed
 
-comm.barrier()
- 
+comm.barrier() #waits for everyone to finish here
+
+if rank == 0:
+    #save data as hdf5 file
+    data_to_save = XY_master_saved.copy() #copy the data to save to the hdf5 file
+    with h5py.File("particle_positions.h5", "w") as f:
+        f.create_dataset("positions", data = data_to_save, compression="lzf") #compression to save space in the RAM
+    
+    #read data to check
+    # with h5py.File("particle_positions.h5", "r") as f:
+    #     data = f["positions"][:]
+    #     print("Data shape:", data.shape)
+
+
 if rank == 0:
     non_zero = ~np.all(XY_master_saved[Nt - 1, :, :] ==  0.,  axis = 1)
     XY_count = XY_master_saved[Nt - 1, non_zero]
