@@ -1,5 +1,5 @@
 {
-  "Tsim": 10.0,
+  "Tsim": 100.0,
   "T_add": 1.0,
   "dt": 0.05,
   "Lx": 100,
@@ -22,7 +22,7 @@
   "Left_W": "false",
   "Up_W": "true",
   "Down_W": "true",
-  "Up_A": "0",
+  "Up_A": "true",
   "Video": "true",
   "End_Plot": "false",
   "proc": 6

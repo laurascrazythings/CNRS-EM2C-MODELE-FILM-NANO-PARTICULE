@@ -104,6 +104,7 @@ down_wall = params["Down_W"]
 up_adhesion = params["Up_A"]
 
 
+
 if right_wall:
     wall.add(0)
     
@@ -1363,7 +1364,7 @@ if rank == 0:
     print("For ", size, ", the runtime before the mp4 is: ", t1 - t0)
     #plot the end surface aggregate
     surface_aggregate, axis = plt.subplots()
-    if end_plot:
+    if end_plot == "true":
         Xlim_max = L_X
         Ylim_min = 0
     else:

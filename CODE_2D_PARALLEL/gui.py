@@ -556,9 +556,9 @@ class InputForm_bool(ttk.Frame):
             return
         
         if text in {"true", "t", "1", "yes", "True"}:
-            text = True
+            text = "True"
         elif text in {"false", "f", "0", "no", "False"}:
-            text = False
+            text = "False"
         else:
             messagebox.showerror("Boolean expected: True/ False / yes/ no")
             return
@@ -584,7 +584,7 @@ class InputForm_bool(ttk.Frame):
     def get_value(self) -> bool:
         if self.text_list.size() > 0:
             value = str(self.text_list.get(0)).strip().lower()
-            return value
+            return (value)
         return 
                               
 #running the script
