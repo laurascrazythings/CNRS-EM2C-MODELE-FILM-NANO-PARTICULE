@@ -1,5 +1,5 @@
 {
-  "Tsim": 100.0,
+  "Tsim": 20.0,
   "T_add": 1.0,
   "dt": 0.05,
   "Lx": 100,
@@ -19,11 +19,11 @@
   "Air_X_Velocity": 0.0,
   "Air_Y_Velocity": 1.0,
   "Right_W": "false",
-  "Left_W": "true",
+  "Left_W": "false",
   "Up_W": "true",
   "Down_W": "true",
   "Up_A": "true",
   "Video": "true",
-  "End_Plot": "true",
+  "End_Plot": "false",
   "proc": 6
 }
