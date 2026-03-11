@@ -1,3 +1,4 @@
+#THE MIT LICENCE 
 #By Laura Lambert Bocquet - lauralambertbocquet@gmail.com for CNRS, January 2026
 #The goal of this code is to have a cheap 3d numerical simulation of molecularar interactions at the micrometer level 
 #For this it uses MPI or Message Per which allows the separation of the different cores of the cpu;

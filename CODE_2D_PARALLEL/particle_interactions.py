@@ -85,7 +85,7 @@ def narrow_detect(Particle_test_pair, dt_left, Vp_stack, XY_stack, Radius_molecu
 def update_particles_collision(XY_stack, Vp_stack, Spin_stack, Colliding_pair, t_collision, Added_par_stack, Radius_molecule, Mass_stack, Num_Particules_end, Aggregate_set, Cg_stack, Attributes, Index_par_local_set, Index_par_ghost_right_set, Index_par_ghost_left_set, Index_par_ghost_up_set, Index_par_ghost_down_set, 
                Index_par_ghost_up_right_set, Index_par_ghost_down_right_set, Index_par_ghost_down_left_set, Index_par_ghost_up_left_set):
     """
-    Goal:update the particle velocity and its position at contact - collision case 
+    Goal:update the particle velocity and its position at contact - collision case
     Args:
         XY_stack: array of size 9*Number of particles and 2 dimensions: position of the particle
         Vp_stack: array of size 9*Number of particles and 2 dimensions: velocity of the particle
